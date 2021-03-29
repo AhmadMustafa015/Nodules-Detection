@@ -6,6 +6,7 @@ import ntpath
 import numpy
 import cv2
 import os
+from multiprocessing import Pool
 
 CUBE_IMGTYPE_SRC = "_i"
 
@@ -75,44 +76,37 @@ def make_pos_annotation_images():
         helpers.print_tabbed([patient_index, patient_id, len(df_annos)], [5, 64, 8])
 
 
-def make_annotation_images_lidc():
-    src_dir = settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/"
-
+def make_annotation_images_lidc(compined_list):
+    csv_file = compined_list[1]
+    patient_index = compined_list[0]
     dst_dir = settings.BASE_DIR_SSD + "generated_traindata/luna16_train_cubes_lidc/"
-    if not os.path.exists(dst_dir):
-        os.mkdir(dst_dir)
+    patient_id = ntpath.basename(csv_file).replace("_annos_pos_lidc.csv", "")
+    df_annos = pandas.read_csv(csv_file)
+    if len(df_annos) == 0:
+        return
+    images = helpers.load_patient_images(patient_id, settings.LIDC_EXTRACTED_IMAGE_DIR, "*" + CUBE_IMGTYPE_SRC + ".png")
 
-    for file_path in glob.glob(dst_dir + "*.*"):
-        os.remove(file_path)
-
-    for patient_index, csv_file in enumerate(glob.glob(src_dir + "*_annos_pos_lidc.csv")):
-        patient_id = ntpath.basename(csv_file).replace("_annos_pos_lidc.csv", "")
-        df_annos = pandas.read_csv(csv_file)
-        if len(df_annos) == 0:
+    for index, row in df_annos.iterrows():
+        coord_x = int(row["coord_x"] * images.shape[2])
+        coord_y = int(row["coord_y"] * images.shape[1])
+        coord_z = int(row["coord_z"] * images.shape[0])
+        malscore = int(row["malscore"])
+        anno_index = row["anno_index"]
+        anno_index = str(anno_index).replace(" ", "xspacex").replace(".", "xpointx").replace("_", "xunderscorex")
+        cube_img = get_cube_from_img(images, coord_x, coord_y, coord_z, 64)
+        if cube_img.sum() < 5:
+            print(" ***** Skipping ", coord_x, coord_y, coord_z)
             continue
-        images = helpers.load_patient_images(patient_id, settings.LIDC_EXTRACTED_IMAGE_DIR, "*" + CUBE_IMGTYPE_SRC + ".png")
 
-        for index, row in df_annos.iterrows():
-            coord_x = int(row["coord_x"] * images.shape[2])
-            coord_y = int(row["coord_y"] * images.shape[1])
-            coord_z = int(row["coord_z"] * images.shape[0])
-            malscore = int(row["malscore"])
-            anno_index = row["anno_index"]
-            anno_index = str(anno_index).replace(" ", "xspacex").replace(".", "xpointx").replace("_", "xunderscorex")
-            cube_img = get_cube_from_img(images, coord_x, coord_y, coord_z, 64)
-            if cube_img.sum() < 5:
-                print(" ***** Skipping ", coord_x, coord_y, coord_z)
-                continue
+        if cube_img.mean() < 10:
+            print(" ***** Suspicious ", coord_x, coord_y, coord_z)
 
-            if cube_img.mean() < 10:
-                print(" ***** Suspicious ", coord_x, coord_y, coord_z)
+        if cube_img.shape != (64, 64, 64):
+            print(" ***** incorrect shape !!! ", str(anno_index), " - ",(coord_x, coord_y, coord_z))
+            continue
 
-            if cube_img.shape != (64, 64, 64):
-                print(" ***** incorrect shape !!! ", str(anno_index), " - ",(coord_x, coord_y, coord_z))
-                continue
-
-            save_cube_img(dst_dir + patient_id + "_" + str(anno_index) + "_" + str(malscore * malscore) + "_1_pos.png", cube_img, 8, 8)
-        helpers.print_tabbed([patient_index, patient_id, len(df_annos)], [5, 64, 8])
+        save_cube_img(dst_dir + patient_id + "_" + str(anno_index) + "_" + str(malscore * malscore) + "_1_pos.png", cube_img, 8, 8)
+    helpers.print_tabbed([patient_index, patient_id, len(df_annos)], [5, 64, 8])
 
 
 def make_pos_annotation_images_manual():
@@ -259,14 +253,28 @@ def make_pos_annotation_images_manual_ndsb3():
             assert malscore > 0 or pos_neg == "neg"
             save_cube_img(dst_dir + "ndsb3manual_" + patient_id + "_" + str(anno_index) + "_" + pos_neg + "_" + str(cancer_label) + "_" + str(malscore) + "_1_pn.png", cube_img, 8, 8)
         helpers.print_tabbed([patient_index, patient_id, len(df_annos)], [5, 64, 8])
+def make_annotation_images_lidc_p():
+    src_dir = settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/"
 
+    dst_dir = settings.BASE_DIR_SSD + "generated_traindata/luna16_train_cubes_lidc/"
+    if not os.path.exists(dst_dir):
+        os.mkdir(dst_dir)
+
+    for file_path in glob.glob(dst_dir + "*.*"):
+        os.remove(file_path)
+    patient_inx_csv = []
+    for patient_index, csv_file in enumerate(glob.glob(src_dir + "*_annos_pos_lidc.csv")):
+        patient_inx_csv.append([patient_index, csv_file])
+
+    pool = Pool(settings.WORKER_POOL_SIZE)
+    pool.map(make_annotation_images_lidc, patient_inx_csv)
 
 if __name__ == "__main__":
     if not os.path.exists(settings.BASE_DIR_SSD + "generated_traindata/"):
         os.mkdir(settings.BASE_DIR_SSD + "generated_traindata/")
 
     if True:
-        make_annotation_images_lidc()
+        make_annotation_images_lidc_p()
     if False:
         make_pos_annotation_images_manual()
     # if False:
