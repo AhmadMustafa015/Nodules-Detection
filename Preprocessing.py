@@ -14,7 +14,7 @@ import os
 import glob
 import scipy.misc
 import pydicom as dicom  # pip install pydicom
-
+#comment
 random.seed(1321)
 numpy.random.seed(1321)
 
