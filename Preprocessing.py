@@ -739,7 +739,7 @@ def process_images(delete_existing=False, only_process_patient=None):
 
     addedNotExist = False
     src_path = []
-    for src_p in glob.glob(src_dir + "*/*/*/*29.dcm"):
+    for src_p in glob.glob(src_dir + "*/*/*/*100.dcm"):
         # if not "100621383016233746780170740405" in src_path:
         #     continue
         src_p = os.path.split(src_p)[0]
@@ -853,22 +853,14 @@ if __name__ == "__main__":
     if False:
         print("step 1 Process images...")
         # only_process_patient = "1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860"
-        list_process = ["1.3.6.1.4.1.14519.5.2.1.6279.6001.144883090372691745980459537053",
-                        "1.3.6.1.4.1.14519.5.2.1.6279.6001.148447286464082095534651426689",
-                        "1.3.6.1.4.1.14519.5.2.1.6279.6001.177252583002664900748714851615",
-                        "1.3.6.1.4.1.14519.5.2.1.6279.6001.219349715895470349269596532320",
-                        "1.3.6.1.4.1.14519.5.2.1.6279.6001.312127933722985204808706697221",
-                        "1.3.6.1.4.1.14519.5.2.1.6279.6001.943403138251347598519939390311",
-                        "1.3.6.1.4.1.14519.5.2.1.6279.6001.964952370561266624992539111877"]
-        for patiant in list_process:
-            process_images(delete_existing=False, only_process_patient=patiant)
+        process_images(delete_existing=False, only_process_patient=None)
 
     if False:
         print("step 2 Process LIDC annotation...")
         process_lidc_annotations(only_patient=None, agreement_threshold=0)
-    if True:
-        # print("step 3 Process positive annotation...")
-        # process_pos_annotations_patient2()
+    if False:
+        #print("step 3 Process positive annotation...")
+        #process_pos_annotations_patient2()
         print("step 4 Process excluded annotation...")
         process_excluded_annotations_patients(only_patient=None)
 
