@@ -79,7 +79,7 @@ def make_pos_annotation_images():
 def make_annotation_images_lidc(compined_list):
     csv_file = compined_list[1]
     patient_index = compined_list[0]
-    dst_dir = settings.BASE_DIR_SSD + "generated_traindata/luna16_train_cubes_lidc/"
+    dst_dir = settings.BASE_DIR_SSD + "generated_traindata/lidc_train_cubes/"
     patient_id = ntpath.basename(csv_file).replace("_annos_pos_lidc.csv", "")
     df_annos = pandas.read_csv(csv_file)
     if len(df_annos) == 0:
@@ -158,53 +158,50 @@ def make_pos_annotation_images_manual():
         helpers.print_tabbed([patient_index, patient_id, len(df_annos)], [5, 64, 8])
 
 
-def make_candidate_auto_images(candidate_types=[]):
-    dst_dir = settings.BASE_DIR_SSD + "generated_traindata/luna16_train_cubes_auto/"
+def make_candidate_auto_images(compined_list):
+    index = compined_list[0]
+    csv_file = compined_list[1]
+    candidate_type = compined_list[2]
+    dst_dir = settings.BASE_DIR_SSD + "generated_traindata/lidc_train_cubes_auto/"
     if not os.path.exists(dst_dir):
         os.mkdir(dst_dir)
+    if candidate_type == "neg_lidc":
+        patient_id = ntpath.basename(csv_file).replace("_annos_" + candidate_type + ".csv", "")
+    else:
+        patient_id = ntpath.basename(csv_file).replace("_candidates_" + candidate_type + ".csv", "")
+    if candidate_type == "neg_lidc":
+        scan_path = settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_candidates_luna.csv"
+        # if os.path.exists(scan_path):
+    print(index, ",patient: ", patient_id, " type:", candidate_type)
+    # if not "148229375703208214308676934766" in patient_id:
+    #     continue
+    df_annos = pandas.read_csv(csv_file)
+    if len(df_annos) == 0:
+        return
+    images = helpers.load_patient_images(patient_id, settings.LIDC_EXTRACTED_IMAGE_DIR, "*" + CUBE_IMGTYPE_SRC + ".png", exclude_wildcards=[])
 
-    for candidate_type in candidate_types:
-        for file_path in glob.glob(dst_dir + "*_" + candidate_type + ".png"):
-            os.remove(file_path)
+    row_no = 0
+    for index, row in df_annos.iterrows():
+        coord_x = int(row["coord_x"] * images.shape[2])
+        coord_y = int(row["coord_y"] * images.shape[1])
+        coord_z = int(row["coord_z"] * images.shape[0])
+        anno_index = int(row["anno_index"])
+        cube_img = get_cube_from_img(images, coord_x, coord_y, coord_z, 48)
+        if cube_img.sum() < 10:
+            print("Skipping ", coord_x, coord_y, coord_z)
+            continue
+        # print(cube_img.sum())
+        try:
+            save_cube_img(dst_dir + patient_id + "_" + str(anno_index) + "_0_" + candidate_type + ".png", cube_img, 6, 8)
+        except Exception as ex:
+            print(ex)
 
-    for candidate_type in candidate_types:
-        if candidate_type == "falsepos":
-            src_dir = "resources/luna16_falsepos_labels/"
-        else:
-            src_dir = settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/"
-
-        for index, csv_file in enumerate(glob.glob(src_dir + "*_candidates_" + candidate_type + ".csv")):
-            patient_id = ntpath.basename(csv_file).replace("_candidates_" + candidate_type + ".csv", "")
-            print(index, ",patient: ", patient_id, " type:", candidate_type)
-            # if not "148229375703208214308676934766" in patient_id:
-            #     continue
-            df_annos = pandas.read_csv(csv_file)
-            if len(df_annos) == 0:
-                continue
-            images = helpers.load_patient_images(patient_id, settings.LIDC_EXTRACTED_IMAGE_DIR, "*" + CUBE_IMGTYPE_SRC + ".png", exclude_wildcards=[])
-
-            row_no = 0
-            for index, row in df_annos.iterrows():
-                coord_x = int(row["coord_x"] * images.shape[2])
-                coord_y = int(row["coord_y"] * images.shape[1])
-                coord_z = int(row["coord_z"] * images.shape[0])
-                anno_index = int(row["anno_index"])
-                cube_img = get_cube_from_img(images, coord_x, coord_y, coord_z, 48)
-                if cube_img.sum() < 10:
-                    print("Skipping ", coord_x, coord_y, coord_z)
-                    continue
-                # print(cube_img.sum())
-                try:
-                    save_cube_img(dst_dir + patient_id + "_" + str(anno_index) + "_0_" + candidate_type + ".png", cube_img, 6, 8)
-                except Exception as ex:
-                    print(ex)
-
-                row_no += 1
-                max_item = 240 if candidate_type == "white" else 200
-                if candidate_type == "luna":
-                    max_item = 500
-                if row_no > max_item:
-                    break
+        row_no += 1
+        max_item = 240 if candidate_type == "white" else 200
+        if candidate_type == "luna":
+            max_item = 500
+        if row_no > max_item:
+            break
 
 
 def make_pos_annotation_images_manual_ndsb3():
@@ -253,10 +250,30 @@ def make_pos_annotation_images_manual_ndsb3():
             assert malscore > 0 or pos_neg == "neg"
             save_cube_img(dst_dir + "ndsb3manual_" + patient_id + "_" + str(anno_index) + "_" + pos_neg + "_" + str(cancer_label) + "_" + str(malscore) + "_1_pn.png", cube_img, 8, 8)
         helpers.print_tabbed([patient_index, patient_id, len(df_annos)], [5, 64, 8])
+
+def make_candidate_auto_images_p(candidate_types=[]):
+    dst_dir = settings.BASE_DIR_SSD + "generated_traindata/lidc_train_cubes_auto/"
+    for candidate_type in candidate_types:
+        for file_path in glob.glob(dst_dir + "*_" + candidate_type + ".png"):
+            os.remove(file_path)
+
+    for candidate_type in candidate_types:
+        if candidate_type == "falsepos":
+            src_dir = "resources/luna16_falsepos_labels/"
+        else:
+            src_dir = settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/"
+        patient_inx_csv = []
+        if candidate_type == "neg_lidc":
+            for index, csv_file in enumerate(glob.glob(src_dir + "*_annos_" + candidate_type + ".csv")):
+                patient_inx_csv.append([index, csv_file, candidate_type])
+        else:
+            for index, csv_file in enumerate(glob.glob(src_dir + "*_candidates_" + candidate_type + ".csv")):
+                patient_inx_csv.append([index, csv_file, candidate_type])
+        pool = Pool(settings.WORKER_POOL_SIZE)
+        pool.map(make_candidate_auto_images, patient_inx_csv)
 def make_annotation_images_lidc_p():
     src_dir = settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/"
-
-    dst_dir = settings.BASE_DIR_SSD + "generated_traindata/luna16_train_cubes_lidc/"
+    dst_dir = settings.BASE_DIR_SSD + "generated_traindata/lidc_train_cubes/"
     if not os.path.exists(dst_dir):
         os.mkdir(dst_dir)
 
@@ -273,17 +290,9 @@ if __name__ == "__main__":
     if not os.path.exists(settings.BASE_DIR_SSD + "generated_traindata/"):
         os.mkdir(settings.BASE_DIR_SSD + "generated_traindata/")
 
-    if True:
+    if False:
         make_annotation_images_lidc_p()
     if False:
         make_pos_annotation_images_manual()
-    # if False:
-    #     make_pos_annotation_images()  # not used anymore
-    if False:
-        make_candidate_auto_images(["falsepos", "luna", "edge"])
-    if False:
-        make_pos_annotation_images_manual_ndsb3()  # for second model
-
-
-
-
+    if True:
+        make_candidate_auto_images_p(["falsepos", "luna", "edge"])
