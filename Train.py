@@ -147,8 +147,6 @@ def get_train_holdout_files(fold_count, train_percentage=85, test_percentage=5, 
         neg_samples = set_item[2]
         pos_samples = set_item[1]
         print("Pos", len(pos_samples))
-        ndsb3_pos = 0
-        ndsb3_neg = 0
         for index, neg_sample_path in enumerate(neg_samples):
             # res.append(sample_path + "/")
             res.append((neg_sample_path, 0, 0))
@@ -156,36 +154,18 @@ def get_train_holdout_files(fold_count, train_percentage=85, test_percentage=5, 
                 pos_sample_path = pos_samples[pos_idx]
                 file_name = ntpath.basename(pos_sample_path)
                 parts = file_name.split("_")
-                if parts[0].startswith("ndsb3manual"):
-                    if parts[3] == "pos":
-                        class_label = 1  # only take positive examples where we know there was a cancer..
-                        cancer_label = int(parts[4])
-                        assert cancer_label == 1
-                        size_label = int(parts[5])
-                        # print(parts[1], size_label)
-                        assert class_label == 1
-                        if size_label < 1:
-                            print("huh ?")
-                        assert size_label >= 1
-                        ndsb3_pos += 1
-                    else:
-                        class_label = 0
-                        size_label = 0
-                        ndsb3_neg += 1
-                else:
-                    class_label = int(parts[-2])
-                    size_label = int(parts[-3])
-                    #TODO: double check
-                    #assert class_label == 1
-                    #assert parts[-1] == "pos.png"
-                    #assert size_label >= 1
 
-                res.append((pos_sample_path, class_label, size_label))
+                class_label = int(parts[-2])
+                #size_label = int(parts[-3])
+                #TODO: double check
+                #assert class_label == 1
+                #assert parts[-1] == "pos.png"
+                #assert size_label >= 1
+
+                res.append((pos_sample_path, class_label))
                 pos_idx += 1
                 pos_idx %= len(pos_samples)
 
-        print("ndsb2 pos: ", ndsb3_pos)
-        print("ndsb2 neg: ", ndsb3_neg)
 
     print("Train count: ", len(train_res), ", holdout count: ", len(holdout_res))
     return train_res, holdout_res
@@ -198,7 +178,6 @@ def data_generator(batch_size, record_list, train_set):
     while True:
         img_list = []
         class_list = []
-        size_list = []
         if train_set:
             random.shuffle(record_list)
         CROP_SIZE = CUBE_SIZE
@@ -206,7 +185,6 @@ def data_generator(batch_size, record_list, train_set):
         for record_idx, record_item in enumerate(record_list):
             #rint patient_dir
             class_label = record_item[1]
-            size_label = record_item[2]
             if class_label == 0:
                 cube_image = helpers.load_cube_img(record_item[0], 6, 8, 48)
                 # if train_set:
@@ -286,17 +264,14 @@ def data_generator(batch_size, record_list, train_set):
                     print("Mean: ", sum(means) / len(means))
             img_list.append(img3d)
             class_list.append(class_label)
-            size_list.append(size_label)
 
             batch_idx += 1
             if batch_idx >= batch_size:
                 x = numpy.vstack(img_list)
                 y_class = numpy.vstack(class_list)
-                y_size = numpy.vstack(size_list)
-                yield x, {"out_class": y_class, "out_malignancy": y_size}
+                yield x, {"out_class": y_class}
                 img_list = []
                 class_list = []
-                size_list = []
                 batch_idx = 0
 
 
@@ -331,13 +306,13 @@ def get_net(input_shape=(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE, 1), load_weight_path=N
     out_class = Conv3D(1, kernel_size=(1, 1, 1), activation="sigmoid", name="out_class_last")(last64)
     out_class = Flatten(name="out_class")(out_class)
 
-    out_malignancy = Conv3D(1, kernel_size=(1, 1, 1), activation=None, name="out_malignancy_last")(last64)
-    out_malignancy = Flatten(name="out_malignancy")(out_malignancy)
+    #out_malignancy = Conv3D(1, kernel_size=(1, 1, 1), activation=None, name="out_malignancy_last")(last64)
+    #out_malignancy = Flatten(name="out_malignancy")(out_malignancy)
 
-    model = Model(inputs=inputs, outputs=[out_class, out_malignancy])
+    model = Model(inputs=inputs, outputs=[out_class]) #out_malignancy])
     if load_weight_path is not None:
         model.load_weights(load_weight_path, by_name=False)
-    model.compile(optimizer=SGD(lr=LEARN_RATE, momentum=0.9, nesterov=True), loss={"out_class": "binary_crossentropy", "out_malignancy": mean_absolute_error}, metrics={"out_class": [binary_accuracy, binary_crossentropy], "out_malignancy": mean_absolute_error})
+    model.compile(optimizer=SGD(lr=LEARN_RATE, momentum=0.9, nesterov=True), loss={"out_class": "binary_crossentropy"}, metrics={"out_class": [binary_accuracy, binary_crossentropy]})
 
     if features:
         model = Model(inputs=inputs, outputs=[last64])
@@ -377,8 +352,9 @@ def train(model_name, fold_count, train_full_set=False, load_weights_path=None, 
     holdout_txt = "_h" + str(ndsb3_holdout) if manual_labels else ""
     if train_full_set:
         holdout_txt = "_fs" + holdout_txt
-    checkpoint = ModelCheckpoint("workdir\\model_" + model_name + "_" + holdout_txt + "_e" + "{epoch:02d}-{val_loss:.4f}.hd5", monitor='val_loss', verbose=1, save_best_only=not train_full_set, save_weights_only=False, mode='auto', period=1)
-    checkpoint_fixed_name = ModelCheckpoint("workdir/model_" + model_name + "_" + holdout_txt + "_best.hd5", monitor='val_loss', verbose=1, save_best_only=True, save_weights_only=False, mode='auto', period=1)
+
+    checkpoint = ModelCheckpoint(os.path.join("workdir\\model_" + model_name + "_" + holdout_txt + "_e" + "{epoch:02d}-{val_loss:.4f}.hd5"), monitor='val_loss', verbose=1, save_best_only=not train_full_set, save_weights_only=False, mode='auto', period=1)
+    checkpoint_fixed_name = ModelCheckpoint(os.path.join("workdir\\model_" + model_name + "_" + holdout_txt + "_best.hd5"), monitor='val_loss', verbose=1, save_best_only=True, save_weights_only=False, mode='auto', period=1)
     #model.fit_generator(train_gen, len(train_files) / batch_size, 12, validation_data=holdout_gen, validation_steps=len(holdout_files) / batch_size, callbacks=[checkpoint, checkpoint_fixed_name, learnrate_scheduler])
     log_dir = "logs\\fit\\" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     if not os.path.exists(log_dir):
@@ -389,7 +365,7 @@ def train(model_name, fold_count, train_full_set=False, load_weights_path=None, 
     call_back = [tensorboard_callback, checkpoint, checkpoint_fixed_name, learnrate_scheduler]
     model.fit(train_gen,steps_per_epoch =  len(train_files) / batch_size,epochs = 25, validation_data=holdout_gen, validation_steps=len(holdout_files) / batch_size, callbacks= call_back)
 
-    model.save("workdir/model_" + model_name + "_" + holdout_txt + "_end.hd5")
+    model.save(os.path.join("workdir\\model_" + model_name + "_" + holdout_txt + "_end.hd5"))
 
 
 if __name__ == "__main__":
