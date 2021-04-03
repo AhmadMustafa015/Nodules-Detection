@@ -14,5 +14,5 @@ BASE_DIR = "C:/Users/RadioscientificOne/PycharmProjects/NoduleDetect/Nodules-Det
 EXTRA_DATA_DIR = "resources/"
 LIDC_RAW_SRC_DIR = "D:/Datasets/manifest-1600709154662/LIDC-IDRI/"
 
-LIDC_EXTRACTED_IMAGE_DIR = "C:/Users/RadioscientificOne/PycharmProjects/NoduleDetect/Nodules-Detection/" + "lidc_extracted_images/"
+LIDC_EXTRACTED_IMAGE_DIR = "C:/Users/RadioscientificOne/PycharmProjects/NoduleDetect/Nodules-Detection/" + "lidc_extracted_images_cubic_interpolation/"
 LIDC_LABEL = "C:/Users/RadioscientificOne/PycharmProjects/NoduleDetect/Nodules-Detection/tcia-lidc-xml/"

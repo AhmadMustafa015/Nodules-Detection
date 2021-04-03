@@ -27,7 +27,7 @@ import datetime
 import tensorflow as tf
 from tensorflow.compat.v1.keras.backend import set_session
 config = tf.compat.v1.ConfigProto()
-config.gpu_options.per_process_gpu_memory_fraction = 0.5
+config.gpu_options.per_process_gpu_memory_fraction = 0.8
 set_session(tf.compat.v1.Session(config=config))
 
 # zonder aug, 10:1 99 train, 97 test, 0.27 cross entropy, before commit 573
@@ -53,80 +53,52 @@ def prepare_image_for_net3D(img):
     return img
 
 
-def get_train_holdout_files(fold_count, train_percentage=80, logreg=True, ndsb3_holdout=0, manual_labels=True, full_luna_set=False):
+def get_train_holdout_files(fold_count, train_percentage=85, test_percentage=5, logreg=True, ndsb3_holdout=0, manual_labels=False, full_luna_set=False):
     print("Get train/holdout files.")
     # pos_samples = glob.glob(settings.BASE_DIR_SSD + "luna16_train_cubes_pos/*.png")
-    pos_samples = glob.glob(settings.BASE_DIR_SSD + "generated_traindata/luna16_train_cubes_lidc/*.png")
+    pos_samples = glob.glob(settings.BASE_DIR_SSD + "generated_traindata2/lidc_train_cubes/*.png")
     print("Pos samples: ", len(pos_samples))
-
-    pos_samples_manual = glob.glob(settings.BASE_DIR_SSD + "generated_traindata/luna16_train_cubes_manual/*_pos.png")
-    print("Pos samples manual: ", len(pos_samples_manual))
-    pos_samples += pos_samples_manual
 
     random.shuffle(pos_samples)
     train_pos_count = int((len(pos_samples) * train_percentage) / 100)
+    test_pos_count = int((len(pos_samples) * test_percentage) / 100)
+    number_of_test = 0
+    pos_samples_test = []
+    while number_of_test < test_pos_count:
+        index = random.randint(0,len(pos_samples))
+        test_case = pos_samples[index]
+        file_name = ntpath.basename(test_case)
+        parts = file_name.split("_")
+        patient_id = parts[0]
+        for root, dirs, files in os.walk(settings.LIDC_RAW_SRC_DIR):
+            if patient_id in dirs and len(files) > 10:
+                root_dir =root
+                root_dir = root_dir.split("/")[:-1]
+                root_dir2 = ""
+                for i in root_dir:
+                    root_dir2 += str(i)+ '/'
+                if len(os.listdir(root_dir2)) > 2:
+                    continue
+
+        images = glob.glob(settings.BASE_DIR_SSD + "generated_traindata2/lidc_train_cubes/"+patient_id +"*.png")
+        number_of_test += len(images)
+        for image in images:
+            pos_samples_test.append(image)
+            pos_samples.remove(image)
+
+    print("Number of Test positive: ", number_of_test)
     pos_samples_train = pos_samples[:train_pos_count]
     pos_samples_holdout = pos_samples[train_pos_count:]
     if full_luna_set:
-        pos_samples_train += pos_samples_holdout
+        pos_samples_train += pos_samples_holdout + pos_samples_test
         if manual_labels:
             pos_samples_holdout = []
 
-
-    ndsb3_list = glob.glob(settings.BASE_DIR_SSD + "generated_traindata/ndsb3_train_cubes_manual/*.png")
-    print("Ndsb3 samples: ", len(ndsb3_list))
-
-    pos_samples_ndsb3_fold = []
-    pos_samples_ndsb3_holdout = []
-    ndsb3_pos = 0
-    ndsb3_neg = 0
-    ndsb3_pos_holdout = 0
-    ndsb3_neg_holdout = 0
-    if manual_labels:
-        for file_path in ndsb3_list:
-            file_name = ntpath.basename(file_path)
-
-            parts = file_name.split("_")
-            if int(parts[4]) == 0 and parts[3] != "neg":  # skip positive non-cancer-cases
-                continue
-
-            if fold_count == 3:
-                if parts[3] == "neg":  # skip negative cases
-                    continue
-
-
-            patient_id = parts[1]
-            patient_fold = helpers.get_patient_fold(patient_id) % fold_count
-            if patient_fold == ndsb3_holdout:
-                pos_samples_ndsb3_holdout.append(file_path)
-                if parts[3] == "neg":
-                    ndsb3_neg_holdout += 1
-                else:
-                    ndsb3_pos_holdout += 1
-            else:
-                pos_samples_ndsb3_fold.append(file_path)
-                print("In fold: ", patient_id)
-                if parts[3] == "neg":
-                    ndsb3_neg += 1
-                else:
-                    ndsb3_pos += 1
-
-    print(ndsb3_pos, " ndsb3 pos labels train")
-    print(ndsb3_neg, " ndsb3 neg labels train")
-    print(ndsb3_pos_holdout, " ndsb3 pos labels holdout")
-    print(ndsb3_neg_holdout, " ndsb3 neg labels holdout")
-
-
-    if manual_labels:
-        for times_ndsb3 in range(4):  # make ndsb labels count 4 times just like in LIDC when 4 doctors annotated a nodule
-            pos_samples_train += pos_samples_ndsb3_fold
-            pos_samples_holdout += pos_samples_ndsb3_holdout
-
-    neg_samples_edge = glob.glob(settings.BASE_DIR_SSD + "generated_traindata/luna16_train_cubes_auto/*_edge.png")
+    neg_samples_edge = glob.glob(settings.BASE_DIR_SSD + "generated_traindata2/lidc_train_cubes_auto/*_edge.png")
     print("Edge samples: ", len(neg_samples_edge))
 
     # neg_samples_white = glob.glob(settings.BASE_DIR_SSD + "luna16_train_cubes_auto/*_white.png")
-    neg_samples_luna = glob.glob(settings.BASE_DIR_SSD + "generated_traindata/luna16_train_cubes_auto/*_luna.png")
+    neg_samples_luna = glob.glob(settings.BASE_DIR_SSD + "generated_traindata2/lidc_train_cubes_auto/*_luna.png")
     print("Luna samples: ", len(neg_samples_luna))
 
     # neg_samples = neg_samples_edge + neg_samples_white
@@ -134,12 +106,25 @@ def get_train_holdout_files(fold_count, train_percentage=80, logreg=True, ndsb3_
     random.shuffle(neg_samples)
 
     train_neg_count = int((len(neg_samples) * train_percentage) / 100)
-
+    test_neg_count =  test_pos_count
     neg_samples_falsepos = []
-    for file_path in glob.glob(settings.BASE_DIR_SSD + "generated_traindata/luna16_train_cubes_auto/*_falsepos.png"):
+    for file_path in glob.glob(settings.BASE_DIR_SSD + "generated_traindata2/lidc_train_cubes_auto/*_falsepos.png"):
         neg_samples_falsepos.append(file_path)
     print("Falsepos LUNA count: ", len(neg_samples_falsepos))
-
+    neg_samples_test = []
+    number_of_test = 0
+    while number_of_test < test_neg_count:
+        index = random.randint(0,len(neg_samples_luna))
+        test_case = neg_samples_luna[index]
+        file_name = ntpath.basename(test_case)
+        parts = file_name.split("_")
+        patient_id = parts[0]
+        images = glob.glob(settings.BASE_DIR_SSD + "generated_traindata2/lidc_train_cubes_auto/"+patient_id +"*_luna.png")
+        number_of_test += len(images)
+        for image in images:
+            neg_samples_test.append(image)
+            neg_samples_luna.remove(image)
+    print("Number of Test negatives: ", number_of_test)
     neg_samples_train = neg_samples[:train_neg_count]
     neg_samples_train += neg_samples_falsepos + neg_samples_falsepos + neg_samples_falsepos
     neg_samples_holdout = neg_samples[train_neg_count:]
@@ -148,6 +133,12 @@ def get_train_holdout_files(fold_count, train_percentage=80, logreg=True, ndsb3_
 
     train_res = []
     holdout_res = []
+    test_res = pos_samples_test + neg_samples_test
+    test_annos = pandas.DataFrame(test_res,columns=["image_dir"])
+    test_annos.to_csv(settings.BASE_DIR_SSD + "Test_data.csv",index=False)
+    #for index, neg_sample_path in enumerate(neg_samples):
+    #class_label = int(parts[-2])
+    #size_label = int(parts[-3])
     sets = [(train_res, pos_samples_train, neg_samples_train), (holdout_res, pos_samples_holdout, neg_samples_holdout)]
     for set_item in sets:
         pos_idx = 0
@@ -184,9 +175,10 @@ def get_train_holdout_files(fold_count, train_percentage=80, logreg=True, ndsb3_
                 else:
                     class_label = int(parts[-2])
                     size_label = int(parts[-3])
-                    assert class_label == 1
-                    assert parts[-1] == "pos.png"
-                    assert size_label >= 1
+                    #TODO: double check
+                    #assert class_label == 1
+                    #assert parts[-1] == "pos.png"
+                    #assert size_label >= 1
 
                 res.append((pos_sample_path, class_label, size_label))
                 pos_idx += 1
@@ -385,13 +377,17 @@ def train(model_name, fold_count, train_full_set=False, load_weights_path=None, 
     holdout_txt = "_h" + str(ndsb3_holdout) if manual_labels else ""
     if train_full_set:
         holdout_txt = "_fs" + holdout_txt
-    checkpoint = ModelCheckpoint("workdir/model_" + model_name + "_" + holdout_txt + "_e" + "{epoch:02d}-{val_loss:.4f}.hd5", monitor='val_loss', verbose=1, save_best_only=not train_full_set, save_weights_only=False, mode='auto', period=1)
+    checkpoint = ModelCheckpoint("workdir\\model_" + model_name + "_" + holdout_txt + "_e" + "{epoch:02d}-{val_loss:.4f}.hd5", monitor='val_loss', verbose=1, save_best_only=not train_full_set, save_weights_only=False, mode='auto', period=1)
     checkpoint_fixed_name = ModelCheckpoint("workdir/model_" + model_name + "_" + holdout_txt + "_best.hd5", monitor='val_loss', verbose=1, save_best_only=True, save_weights_only=False, mode='auto', period=1)
     #model.fit_generator(train_gen, len(train_files) / batch_size, 12, validation_data=holdout_gen, validation_steps=len(holdout_files) / batch_size, callbacks=[checkpoint, checkpoint_fixed_name, learnrate_scheduler])
-    log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
+    log_dir = "logs\\fit\\" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    if not os.path.exists(log_dir):
+        os.mkdir(log_dir)
+    logdir = os.path.join(log_dir)
+    tensorboard_callback = TensorBoard(log_dir=logdir, histogram_freq=1)
+    #tensorboard_callback,
     call_back = [tensorboard_callback, checkpoint, checkpoint_fixed_name, learnrate_scheduler]
-    model.fit(train_gen,steps_per_epoch =  len(train_files) / batch_size,epochs = 12, validation_data=holdout_gen, validation_steps=len(holdout_files) / batch_size, callbacks= call_back)
+    model.fit(train_gen,steps_per_epoch =  len(train_files) / batch_size,epochs = 25, validation_data=holdout_gen, validation_steps=len(holdout_files) / batch_size, callbacks= call_back)
 
     model.save("workdir/model_" + model_name + "_" + holdout_txt + "_end.hd5")
 
@@ -403,17 +399,4 @@ if __name__ == "__main__":
         if not os.path.exists("models/"):
             os.mkdir("models")
         shutil.copy("workdir/model_luna16_full__fs_best.hd5", "models/model_luna16_full__fs_best.hd5")
-
-    # model 2 on luna16 annotations + ndsb pos annotations. 3 folds (1st half, 2nd half of ndsb patients) 2 versions for blending
-    if False:
-        train(train_full_set=True, load_weights_path=None, ndsb3_holdout=0, manual_labels=True, model_name="luna_posnegndsb_v1", fold_count=2)
-        train(train_full_set=True, load_weights_path=None, ndsb3_holdout=1, manual_labels=True, model_name="luna_posnegndsb_v1", fold_count=2)
-        shutil.copy("workdir/model_luna_posnegndsb_v1__fs_h0_end.hd5", "models/model_luna_posnegndsb_v1__fs_h0_end.hd5")
-        shutil.copy("workdir/model_luna_posnegndsb_v1__fs_h1_end.hd5", "models/model_luna_posnegndsb_v1__fs_h1_end.hd5")
-
-    if False:
-        train(train_full_set=True, load_weights_path=None, ndsb3_holdout=0, manual_labels=True, model_name="luna_posnegndsb_v2", fold_count=2)
-        train(train_full_set=True, load_weights_path=None, ndsb3_holdout=1, manual_labels=True, model_name="luna_posnegndsb_v2", fold_count=2)
-        shutil.copy("workdir/model_luna_posnegndsb_v2__fs_h0_end.hd5", "models/model_luna_posnegndsb_v2__fs_h0_end.hd5")
-        shutil.copy("workdir/model_luna_posnegndsb_v2__fs_h1_end.hd5", "models/model_luna_posnegndsb_v2__fs_h1_end.hd5")
 

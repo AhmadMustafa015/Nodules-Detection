@@ -18,7 +18,7 @@ import pydicom as dicom  # pip install pydicom
 random.seed(1321)
 numpy.random.seed(1321)
 
-
+## From LIDC dataset find the patient with given ID and return the path for directory
 def find_dcm_file(patient_id):
     # for subject_no in range(settings.LUNA_SUBSET_START_INDEX, 10):
     src_dir = settings.LIDC_RAW_SRC_DIR  # + "subset" + str(subject_no) + "/"
@@ -34,6 +34,7 @@ def find_dcm_file(patient_id):
     return None
 
 
+# one xml path given input,
 def load_lidc_xml(xml_path, agreement_threshold=0, only_patient=None, save_nodules=False):
     pos_lines = []
     neg_lines = []
@@ -255,6 +256,9 @@ def extract_dicom_images_patient(src_dir):
     print("Dir_Path: ", src_dir)
     patient_id = os.path.basename(src_dir)
     search_dirs = os.listdir(settings.LIDC_EXTRACTED_IMAGE_DIR)
+    scan_path = settings.LIDC_EXTRACTED_IMAGE_DIR + patient_id + "/img_0033_i.png"
+    if os.path.exists(scan_path):
+        return
     # if patient_id in search_dirs:
     #    return
 
@@ -739,7 +743,7 @@ def process_images(delete_existing=False, only_process_patient=None):
 
     addedNotExist = False
     src_path = []
-    for src_p in glob.glob(src_dir + "*/*/*/*100.dcm"):
+    for src_p in glob.glob(src_dir + "*/*/*/*30.dcm"):
         # if not "100621383016233746780170740405" in src_path:
         #     continue
         src_p = os.path.split(src_p)[0]
@@ -850,7 +854,7 @@ def process_lidc_annotations(only_patient=None, agreement_threshold=0):
 
 
 if __name__ == "__main__":
-    if False:
+    if True:
         print("step 1 Process images...")
         # only_process_patient = "1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860"
         process_images(delete_existing=False, only_process_patient=None)
@@ -864,9 +868,9 @@ if __name__ == "__main__":
         print("step 4 Process excluded annotation...")
         process_excluded_annotations_patients(only_patient=None)
 
-    if True:
+    if False:
         print("step 5 Process luna candidates patients...")
         process_luna_candidates_patients(only_patient_id=None)
-    if True:
+    if False:
         print("step 6 Process auto candidates patients...")
         process_auto_candidates_patients()
