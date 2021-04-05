@@ -27,7 +27,7 @@ import datetime
 import tensorflow as tf
 from tensorflow.compat.v1.keras.backend import set_session
 config = tf.compat.v1.ConfigProto()
-config.gpu_options.per_process_gpu_memory_fraction = 0.5
+config.gpu_options.per_process_gpu_memory_fraction = 0.8
 set_session(tf.compat.v1.Session(config=config))
 
 # zonder aug, 10:1 99 train, 97 test, 0.27 cross entropy, before commit 573
@@ -53,80 +53,52 @@ def prepare_image_for_net3D(img):
     return img
 
 
-def get_train_holdout_files(fold_count, train_percentage=80, logreg=True, ndsb3_holdout=0, manual_labels=True, full_luna_set=False):
+def get_train_holdout_files(fold_count, train_percentage=85, test_percentage=5, logreg=True, ndsb3_holdout=0, manual_labels=False, full_luna_set=False):
     print("Get train/holdout files.")
     # pos_samples = glob.glob(settings.BASE_DIR_SSD + "luna16_train_cubes_pos/*.png")
-    pos_samples = glob.glob(settings.BASE_DIR_SSD + "generated_traindata/luna16_train_cubes_lidc/*.png")
+    pos_samples = glob.glob(settings.BASE_DIR_SSD + "generated_traindata2/lidc_train_cubes/*.png")
     print("Pos samples: ", len(pos_samples))
-
-    pos_samples_manual = glob.glob(settings.BASE_DIR_SSD + "generated_traindata/luna16_train_cubes_manual/*_pos.png")
-    print("Pos samples manual: ", len(pos_samples_manual))
-    pos_samples += pos_samples_manual
 
     random.shuffle(pos_samples)
     train_pos_count = int((len(pos_samples) * train_percentage) / 100)
+    test_pos_count = int((len(pos_samples) * test_percentage) / 100)
+    number_of_test = 0
+    pos_samples_test = []
+    while number_of_test < test_pos_count:
+        index = random.randint(0,len(pos_samples))
+        test_case = pos_samples[index]
+        file_name = ntpath.basename(test_case)
+        parts = file_name.split("_")
+        patient_id = parts[0]
+        for root, dirs, files in os.walk(settings.LIDC_RAW_SRC_DIR):
+            if patient_id in dirs and len(files) > 10:
+                root_dir =root
+                root_dir = root_dir.split("/")[:-1]
+                root_dir2 = ""
+                for i in root_dir:
+                    root_dir2 += str(i)+ '/'
+                if len(os.listdir(root_dir2)) > 2:
+                    continue
+
+        images = glob.glob(settings.BASE_DIR_SSD + "generated_traindata2/lidc_train_cubes/"+patient_id +"*.png")
+        number_of_test += len(images)
+        for image in images:
+            pos_samples_test.append(image)
+            pos_samples.remove(image)
+
+    print("Number of Test positive: ", number_of_test)
     pos_samples_train = pos_samples[:train_pos_count]
     pos_samples_holdout = pos_samples[train_pos_count:]
     if full_luna_set:
-        pos_samples_train += pos_samples_holdout
+        pos_samples_train += pos_samples_holdout + pos_samples_test
         if manual_labels:
             pos_samples_holdout = []
 
-
-    ndsb3_list = glob.glob(settings.BASE_DIR_SSD + "generated_traindata/ndsb3_train_cubes_manual/*.png")
-    print("Ndsb3 samples: ", len(ndsb3_list))
-
-    pos_samples_ndsb3_fold = []
-    pos_samples_ndsb3_holdout = []
-    ndsb3_pos = 0
-    ndsb3_neg = 0
-    ndsb3_pos_holdout = 0
-    ndsb3_neg_holdout = 0
-    if manual_labels:
-        for file_path in ndsb3_list:
-            file_name = ntpath.basename(file_path)
-
-            parts = file_name.split("_")
-            if int(parts[4]) == 0 and parts[3] != "neg":  # skip positive non-cancer-cases
-                continue
-
-            if fold_count == 3:
-                if parts[3] == "neg":  # skip negative cases
-                    continue
-
-
-            patient_id = parts[1]
-            patient_fold = helpers.get_patient_fold(patient_id) % fold_count
-            if patient_fold == ndsb3_holdout:
-                pos_samples_ndsb3_holdout.append(file_path)
-                if parts[3] == "neg":
-                    ndsb3_neg_holdout += 1
-                else:
-                    ndsb3_pos_holdout += 1
-            else:
-                pos_samples_ndsb3_fold.append(file_path)
-                print("In fold: ", patient_id)
-                if parts[3] == "neg":
-                    ndsb3_neg += 1
-                else:
-                    ndsb3_pos += 1
-
-    print(ndsb3_pos, " ndsb3 pos labels train")
-    print(ndsb3_neg, " ndsb3 neg labels train")
-    print(ndsb3_pos_holdout, " ndsb3 pos labels holdout")
-    print(ndsb3_neg_holdout, " ndsb3 neg labels holdout")
-
-
-    if manual_labels:
-        for times_ndsb3 in range(4):  # make ndsb labels count 4 times just like in LIDC when 4 doctors annotated a nodule
-            pos_samples_train += pos_samples_ndsb3_fold
-            pos_samples_holdout += pos_samples_ndsb3_holdout
-
-    neg_samples_edge = glob.glob(settings.BASE_DIR_SSD + "generated_traindata/luna16_train_cubes_auto/*_edge.png")
+    neg_samples_edge = glob.glob(settings.BASE_DIR_SSD + "generated_traindata2/lidc_train_cubes_auto/*_edge.png")
     print("Edge samples: ", len(neg_samples_edge))
 
     # neg_samples_white = glob.glob(settings.BASE_DIR_SSD + "luna16_train_cubes_auto/*_white.png")
-    neg_samples_luna = glob.glob(settings.BASE_DIR_SSD + "generated_traindata/luna16_train_cubes_auto/*_luna.png")
+    neg_samples_luna = glob.glob(settings.BASE_DIR_SSD + "generated_traindata2/lidc_train_cubes_auto/*_luna.png")
     print("Luna samples: ", len(neg_samples_luna))
 
     # neg_samples = neg_samples_edge + neg_samples_white
@@ -134,12 +106,25 @@ def get_train_holdout_files(fold_count, train_percentage=80, logreg=True, ndsb3_
     random.shuffle(neg_samples)
 
     train_neg_count = int((len(neg_samples) * train_percentage) / 100)
-
+    test_neg_count =  test_pos_count
     neg_samples_falsepos = []
-    for file_path in glob.glob(settings.BASE_DIR_SSD + "generated_traindata/luna16_train_cubes_auto/*_falsepos.png"):
+    for file_path in glob.glob(settings.BASE_DIR_SSD + "generated_traindata2/lidc_train_cubes_auto/*_falsepos.png"):
         neg_samples_falsepos.append(file_path)
     print("Falsepos LUNA count: ", len(neg_samples_falsepos))
-
+    neg_samples_test = []
+    number_of_test = 0
+    while number_of_test < test_neg_count:
+        index = random.randint(0,len(neg_samples_luna))
+        test_case = neg_samples_luna[index]
+        file_name = ntpath.basename(test_case)
+        parts = file_name.split("_")
+        patient_id = parts[0]
+        images = glob.glob(settings.BASE_DIR_SSD + "generated_traindata2/lidc_train_cubes_auto/"+patient_id +"*_luna.png")
+        number_of_test += len(images)
+        for image in images:
+            neg_samples_test.append(image)
+            neg_samples_luna.remove(image)
+    print("Number of Test negatives: ", number_of_test)
     neg_samples_train = neg_samples[:train_neg_count]
     neg_samples_train += neg_samples_falsepos + neg_samples_falsepos + neg_samples_falsepos
     neg_samples_holdout = neg_samples[train_neg_count:]
@@ -148,6 +133,12 @@ def get_train_holdout_files(fold_count, train_percentage=80, logreg=True, ndsb3_
 
     train_res = []
     holdout_res = []
+    test_res = pos_samples_test + neg_samples_test
+    test_annos = pandas.DataFrame(test_res,columns=["image_dir"])
+    test_annos.to_csv(settings.BASE_DIR_SSD + "Test_data.csv",index=False)
+    #for index, neg_sample_path in enumerate(neg_samples):
+    #class_label = int(parts[-2])
+    #size_label = int(parts[-3])
     sets = [(train_res, pos_samples_train, neg_samples_train), (holdout_res, pos_samples_holdout, neg_samples_holdout)]
     for set_item in sets:
         pos_idx = 0
@@ -156,8 +147,6 @@ def get_train_holdout_files(fold_count, train_percentage=80, logreg=True, ndsb3_
         neg_samples = set_item[2]
         pos_samples = set_item[1]
         print("Pos", len(pos_samples))
-        ndsb3_pos = 0
-        ndsb3_neg = 0
         for index, neg_sample_path in enumerate(neg_samples):
             # res.append(sample_path + "/")
             res.append((neg_sample_path, 0, 0))
@@ -165,35 +154,18 @@ def get_train_holdout_files(fold_count, train_percentage=80, logreg=True, ndsb3_
                 pos_sample_path = pos_samples[pos_idx]
                 file_name = ntpath.basename(pos_sample_path)
                 parts = file_name.split("_")
-                if parts[0].startswith("ndsb3manual"):
-                    if parts[3] == "pos":
-                        class_label = 1  # only take positive examples where we know there was a cancer..
-                        cancer_label = int(parts[4])
-                        assert cancer_label == 1
-                        size_label = int(parts[5])
-                        # print(parts[1], size_label)
-                        assert class_label == 1
-                        if size_label < 1:
-                            print("huh ?")
-                        assert size_label >= 1
-                        ndsb3_pos += 1
-                    else:
-                        class_label = 0
-                        size_label = 0
-                        ndsb3_neg += 1
-                else:
-                    class_label = int(parts[-2])
-                    size_label = int(parts[-3])
-                    assert class_label == 1
-                    assert parts[-1] == "pos.png"
-                    assert size_label >= 1
 
-                res.append((pos_sample_path, class_label, size_label))
+                class_label = int(parts[-2])
+                #size_label = int(parts[-3])
+                #TODO: double check
+                #assert class_label == 1
+                #assert parts[-1] == "pos.png"
+                #assert size_label >= 1
+
+                res.append((pos_sample_path, class_label))
                 pos_idx += 1
                 pos_idx %= len(pos_samples)
 
-        print("ndsb2 pos: ", ndsb3_pos)
-        print("ndsb2 neg: ", ndsb3_neg)
 
     print("Train count: ", len(train_res), ", holdout count: ", len(holdout_res))
     return train_res, holdout_res
@@ -206,7 +178,6 @@ def data_generator(batch_size, record_list, train_set):
     while True:
         img_list = []
         class_list = []
-        size_list = []
         if train_set:
             random.shuffle(record_list)
         CROP_SIZE = CUBE_SIZE
@@ -214,7 +185,6 @@ def data_generator(batch_size, record_list, train_set):
         for record_idx, record_item in enumerate(record_list):
             #rint patient_dir
             class_label = record_item[1]
-            size_label = record_item[2]
             if class_label == 0:
                 cube_image = helpers.load_cube_img(record_item[0], 6, 8, 48)
                 # if train_set:
@@ -294,17 +264,14 @@ def data_generator(batch_size, record_list, train_set):
                     print("Mean: ", sum(means) / len(means))
             img_list.append(img3d)
             class_list.append(class_label)
-            size_list.append(size_label)
 
             batch_idx += 1
             if batch_idx >= batch_size:
                 x = numpy.vstack(img_list)
                 y_class = numpy.vstack(class_list)
-                y_size = numpy.vstack(size_list)
-                yield x, {"out_class": y_class, "out_malignancy": y_size}
+                yield x, {"out_class": y_class}
                 img_list = []
                 class_list = []
-                size_list = []
                 batch_idx = 0
 
 
@@ -339,13 +306,13 @@ def get_net(input_shape=(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE, 1), load_weight_path=N
     out_class = Conv3D(1, kernel_size=(1, 1, 1), activation="sigmoid", name="out_class_last")(last64)
     out_class = Flatten(name="out_class")(out_class)
 
-    out_malignancy = Conv3D(1, kernel_size=(1, 1, 1), activation=None, name="out_malignancy_last")(last64)
-    out_malignancy = Flatten(name="out_malignancy")(out_malignancy)
+    #out_malignancy = Conv3D(1, kernel_size=(1, 1, 1), activation=None, name="out_malignancy_last")(last64)
+    #out_malignancy = Flatten(name="out_malignancy")(out_malignancy)
 
-    model = Model(inputs=inputs, outputs=[out_class, out_malignancy])
+    model = Model(inputs=inputs, outputs=[out_class]) #out_malignancy])
     if load_weight_path is not None:
         model.load_weights(load_weight_path, by_name=False)
-    model.compile(optimizer=SGD(lr=LEARN_RATE, momentum=0.9, nesterov=True), loss={"out_class": "binary_crossentropy", "out_malignancy": mean_absolute_error}, metrics={"out_class": [binary_accuracy, binary_crossentropy], "out_malignancy": mean_absolute_error})
+    model.compile(optimizer=SGD(lr=LEARN_RATE, momentum=0.9, nesterov=True), loss={"out_class": "binary_crossentropy"}, metrics={"out_class": [binary_accuracy, binary_crossentropy]})
 
     if features:
         model = Model(inputs=inputs, outputs=[last64])
@@ -385,35 +352,189 @@ def train(model_name, fold_count, train_full_set=False, load_weights_path=None, 
     holdout_txt = "_h" + str(ndsb3_holdout) if manual_labels else ""
     if train_full_set:
         holdout_txt = "_fs" + holdout_txt
-    checkpoint = ModelCheckpoint("workdir/model_" + model_name + "_" + holdout_txt + "_e" + "{epoch:02d}-{val_loss:.4f}.hd5", monitor='val_loss', verbose=1, save_best_only=not train_full_set, save_weights_only=False, mode='auto', period=1)
-    checkpoint_fixed_name = ModelCheckpoint("workdir/model_" + model_name + "_" + holdout_txt + "_best.hd5", monitor='val_loss', verbose=1, save_best_only=True, save_weights_only=False, mode='auto', period=1)
+
+    checkpoint = ModelCheckpoint(os.path.join("workdir\\model_" + model_name + "_" + holdout_txt + "_e" + "{epoch:02d}-{val_loss:.4f}.hd5"), monitor='val_loss', verbose=1, save_best_only=not train_full_set, save_weights_only=False, mode='auto', period=1)
+    checkpoint_fixed_name = ModelCheckpoint(os.path.join("workdir\\model_" + model_name + "_" + holdout_txt + "_best.hd5"), monitor='val_loss', verbose=1, save_best_only=True, save_weights_only=False, mode='auto', period=1)
     #model.fit_generator(train_gen, len(train_files) / batch_size, 12, validation_data=holdout_gen, validation_steps=len(holdout_files) / batch_size, callbacks=[checkpoint, checkpoint_fixed_name, learnrate_scheduler])
-    log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
+    log_dir = "logs\\fit\\" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    if not os.path.exists(log_dir):
+        os.mkdir(log_dir)
+    logdir = os.path.join(log_dir)
+    tensorboard_callback = TensorBoard(log_dir=logdir, histogram_freq=1)
+    #tensorboard_callback,
     call_back = [tensorboard_callback, checkpoint, checkpoint_fixed_name, learnrate_scheduler]
-    model.fit(train_gen,steps_per_epoch =  len(train_files) / batch_size,epochs = 12, validation_data=holdout_gen, validation_steps=len(holdout_files) / batch_size, callbacks= call_back)
+    model.fit(train_gen,steps_per_epoch =  len(train_files) / batch_size,epochs = 25, validation_data=holdout_gen, validation_steps=len(holdout_files) / batch_size, callbacks= call_back)
 
-    model.save("workdir/model_" + model_name + "_" + holdout_txt + "_end.hd5")
+    model.save(os.path.join("workdir\\model_" + model_name + "_" + holdout_txt + "_end.hd5"))
+
+def evaluate(image_label=None, model_path= None):
+    cubic_images = pandas.read_csv(image_label,sep=',').values.tolist()
+    #print(cubic_images)
+    total_number_of_ct = 0
+    labels = []
+    pred_labels = []
+    batch_size = 128
+    batch_list = []
+    model = tf.keras.models.load_model(model_path)
+    batch_list_coords = []
+    patient_predictions_csv = []
+    P_TH = 0.6
+    model.summary()
+    pos_number=0
+    neg_number=0
+    random.shuffle(cubic_images)
+    cubic_statestic = []
+    for row in cubic_images:
+        #row.set_option('display.max_colwidth', None)
+        root_dir = os.path.basename(row[0])
+        parts = root_dir.split("_")
+        class_label = int(parts[-2])
+        patient_id = parts[0]
+        labels.append(class_label)
+        if class_label == 1:
+            cube_image = helpers.load_cube_img(row[0], 8, 8, 64)
+            CROP_SIZE = CUBE_SIZE
+            pos_number+=1
+            current_cube_size = cube_image.shape[0]
+            indent_x = (current_cube_size - CROP_SIZE) / 2
+            indent_y = (current_cube_size - CROP_SIZE) / 2
+            indent_z = (current_cube_size - CROP_SIZE) / 2
+            wiggle_indent = 0
+            wiggle = current_cube_size - CROP_SIZE - 1
+            if wiggle > (CROP_SIZE / 2):
+                wiggle_indent = CROP_SIZE / 4
+                wiggle = current_cube_size - CROP_SIZE - CROP_SIZE / 2 - 1
+
+            indent_x = int(indent_x)
+            indent_y = int(indent_y)
+            indent_z = int(indent_z)
+            cube_image = cube_image[indent_z:indent_z + CROP_SIZE, indent_y:indent_y + CROP_SIZE,
+                         indent_x:indent_x + CROP_SIZE]
+        else:
+            cube_image = helpers.load_cube_img(row[0], 6, 8, 48)
+            #CROP_SIZE = 48
+            neg_number +=1
+            wiggle = 48 - CROP_SIZE - 1
+            indent_x = 0
+            indent_y = 0
+            indent_z = 0
+            if wiggle > 0:
+                indent_x = random.randint(0, wiggle)
+                indent_y = random.randint(0, wiggle)
+                indent_z = random.randint(0, wiggle)
+            cube_image = cube_image[indent_z:indent_z + CROP_SIZE, indent_y:indent_y + CROP_SIZE,
+                         indent_x:indent_x + CROP_SIZE]
 
 
+        assert cube_image.shape == (CUBE_SIZE, CUBE_SIZE, CUBE_SIZE)
+        img_prep = prepare_image_for_net3D(cube_image)
+        #batch_list.append(img_prep)
+        #if len(batch_list) % batch_size == 0:
+        #batch_data = numpy.vstack(batch_list)
+        p = model.predict(img_prep, batch_size=1)
+        #for i in range(len(p[0])):
+        nodule_chance = p[0][0]
+        if p[0][0] > P_TH:
+            pred_labels.append(1)
+            if class_label == 1:
+                status = "tp"
+            else:
+                status = "fp"
+        else:
+            pred_labels.append(0)
+            if class_label == 0:
+                status = "tn"
+            else:
+                status = "fn"
+
+        cubic_statestic.append([patient_id,class_label,pred_labels[-1],p[0][0],status])
+        print("nodule_chance: ", nodule_chance,"\tTrue_label: ",class_label)
+        print(root_dir)
+    if not os.path.exists("prediction"):
+        os.mkdir("prediction")
+    df_pred_cube = pandas.DataFrame(cubic_statestic,columns=["patient_id", "true_label", "pred_label","prediction_value", "status"])
+    df_pred_cube.to_csv(settings.LIDC_PREDICTION_DIR + "predictions_per_cube.csv", index=False)
+    #df_scan = pandas.DataFrame(index=len(df_pred_cube['patient_id'].unique()), columns=["patient_id", "total_pos", "total_neg","FP", "FN","sensitivity","specificity"])
+    ct_statestic = []
+    for patient in df_pred_cube['patient_id'].unique():
+        df = df_pred_cube.loc[df_pred_cube["patient_id"] == str(patient)]
+        pos_count = len(df.loc[df["true_label"] == 1])
+        neg_count = len(df.loc[df["true_label"] == 0])
+        tp_count = len(df.loc[df["status"] == "tp"])
+        tn_count = len(df.loc[df["status"] == "tn"])
+        fp_count = len(df.loc[df["status"] == "fp"])
+        fn_count = len(df.loc[df["status"] == "fn"])
+        sens = tp_count/(tp_count+fn_count)
+        spec = tn_count/(tn_count+fp_count)
+        ct_statestic.append([str(patient),pos_count,neg_count,fp_count,fn_count,sens,spec])
+    df_scan = pandas.DataFrame(ct_statestic,columns=["patient_id", "total_pos", "total_neg","FP", "FN","sensitivity","specificity"])
+    df_scan.to_csv(settings.LIDC_PREDICTION_DIR + "predictions_per_ct_scan.csv", index=False)
+    sensitivity = numpy.mean(ct_statestic[:,5])
+    specificity = numpy.mean(ct_statestic[:,6])
+    print("Total number of positive = ", pos_number, "Total number of negative = ", neg_number)
+    sensitivity, specificity = compute_class_sens_spec(pred_labels,labels)
+    print("sensitivity: ",sensitivity,"specificity: ", specificity)
+
+def compute_class_sens_spec(pred, label):
+    """
+    Compute sensitivity and specificity for a particular example
+    for a given class.
+
+    Args:
+        pred (np.array): binary arrary of predictions, shape is
+                         (num classes, height, width, depth).
+        label (np.array): binary array of labels, shape is
+                          (num classes, height, width, depth).
+        class_num (int): number between 0 - (num_classes -1) which says
+                         which prediction class to compute statistics
+                         for.
+
+    Returns:
+        sensitivity (float): precision for given class_num.
+        specificity (float): recall for given class_num
+    """
+
+    # extract sub-array for specified class
+    class_pred = pred
+    class_label = label
+
+    ### START CODE HERE (REPLACE INSTANCES OF 'None' with your code) ###
+
+    # compute:
+
+    # true positives
+    tp = numpy.sum((class_pred == 1) & (class_label == 1))
+
+    # compute sensitivity and specificity
+
+    # true negatives
+    tn = numpy.sum((class_pred == 0) & (class_label == 0))
+
+    # false positives
+    fp = numpy.sum((class_pred == 1) & (class_label == 0))
+
+    # false negatives
+    fn = numpy.sum((class_pred == 0) & (class_label == 1))
+
+    # compute sensitivity and specificity
+    sensitivity = tp / (tp + fn)
+    print(sensitivity)
+    specificity = tn / (tn + fp)
+    print(specificity)
+    ### END CODE HERE ###
+    return fp,fn
+    #return sensitivity, specificity
 if __name__ == "__main__":
-    if True:
+    if False:
         # model 1 on luna16 annotations. full set 1 versions for blending
         train(train_full_set=True, load_weights_path=None, model_name="luna16_full", fold_count=-1, manual_labels=False)
         if not os.path.exists("models/"):
             os.mkdir("models")
         shutil.copy("workdir/model_luna16_full__fs_best.hd5", "models/model_luna16_full__fs_best.hd5")
 
-    # model 2 on luna16 annotations + ndsb pos annotations. 3 folds (1st half, 2nd half of ndsb patients) 2 versions for blending
-    if False:
-        train(train_full_set=True, load_weights_path=None, ndsb3_holdout=0, manual_labels=True, model_name="luna_posnegndsb_v1", fold_count=2)
-        train(train_full_set=True, load_weights_path=None, ndsb3_holdout=1, manual_labels=True, model_name="luna_posnegndsb_v1", fold_count=2)
-        shutil.copy("workdir/model_luna_posnegndsb_v1__fs_h0_end.hd5", "models/model_luna_posnegndsb_v1__fs_h0_end.hd5")
-        shutil.copy("workdir/model_luna_posnegndsb_v1__fs_h1_end.hd5", "models/model_luna_posnegndsb_v1__fs_h1_end.hd5")
+    # This part to calculate metrics from the model
+    if True:
+        evaluate(image_label=settings.BASE_DIR_SSD + "Test_data.csv",model_path="models/model_luna16_full__fs_best.hd5")
 
-    if False:
-        train(train_full_set=True, load_weights_path=None, ndsb3_holdout=0, manual_labels=True, model_name="luna_posnegndsb_v2", fold_count=2)
-        train(train_full_set=True, load_weights_path=None, ndsb3_holdout=1, manual_labels=True, model_name="luna_posnegndsb_v2", fold_count=2)
-        shutil.copy("workdir/model_luna_posnegndsb_v2__fs_h0_end.hd5", "models/model_luna_posnegndsb_v2__fs_h0_end.hd5")
-        shutil.copy("workdir/model_luna_posnegndsb_v2__fs_h1_end.hd5", "models/model_luna_posnegndsb_v2__fs_h1_end.hd5")
+
 

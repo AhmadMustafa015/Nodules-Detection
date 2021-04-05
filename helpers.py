@@ -142,7 +142,7 @@ def rescale_patient_images(images_zyx, org_spacing_xyz, target_voxel_mm, is_mask
     # print "Resizing dim z"
     resize_x = 1.0
     resize_y = float(org_spacing_xyz[2]) / float(target_voxel_mm)
-    interpolation = cv2.INTER_NEAREST if is_mask_image else cv2.INTER_LINEAR
+    interpolation = cv2.INTER_NEAREST if is_mask_image else cv2.INTER_CUBIC
     res = cv2.resize(images_zyx, dsize=None, fx=resize_x, fy=resize_y, interpolation=interpolation)  # opencv assumes y, x, channels umpy array, so y = z pfff
     # print "Shape is now : ", res.shape
 

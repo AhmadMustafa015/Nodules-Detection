@@ -9,20 +9,20 @@ import shutil
 import random
 import math
 from multiprocessing import Pool
-from bs4 import BeautifulSoup #  conda install beautifulsoup4, coda install lxml
+from bs4 import BeautifulSoup  # conda install beautifulsoup4, coda install lxml
 import os
 import glob
 import scipy.misc
 import pydicom as dicom  # pip install pydicom
-#comment
+
 random.seed(1321)
 numpy.random.seed(1321)
 
-
+## From LIDC dataset find the patient with given ID and return the path for directory
 def find_dcm_file(patient_id):
     # for subject_no in range(settings.LUNA_SUBSET_START_INDEX, 10):
     src_dir = settings.LIDC_RAW_SRC_DIR  # + "subset" + str(subject_no) + "/"
-    dir_path=""
+    dir_path = ""
     for src_path in os.listdir(src_dir):
         src_dirc = settings.LIDC_RAW_SRC_DIR + src_path + "/"
         for root, dirs, files in os.walk(src_dirc):
@@ -34,6 +34,7 @@ def find_dcm_file(patient_id):
     return None
 
 
+# one xml path given input,
 def load_lidc_xml(xml_path, agreement_threshold=0, only_patient=None, save_nodules=False):
     pos_lines = []
     neg_lines = []
@@ -54,10 +55,10 @@ def load_lidc_xml(xml_path, agreement_threshold=0, only_patient=None, save_nodul
     if src_path is None:
         return None, None, None
     scan_path = settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_annos_pos_lidc.csv"
-    if os.path.exists(scan_path):
-        return None, None, None
+    # if os.path.exists(scan_path):
+    #    return None, None, None
 
-    print("Patient ID: ",patient_id)
+    print("Patient ID: ", patient_id)
     # Get the list of files belonging to a specific series ID.
     reader = SimpleITK.ImageSeriesReader()
     # Use the functional interface to read the image series.
@@ -69,8 +70,8 @@ def load_lidc_xml(xml_path, agreement_threshold=0, only_patient=None, save_nodul
     rescale = spacing / settings.TARGET_VOXEL_MM
     reading_sessions = xml.LidcReadMessage.find_all("readingSession")
 
-    #print("Origin: ",origin)
-    #print("Spacing: ", spacing)
+    # print("Origin: ",origin)
+    # print("Spacing: ", spacing)
     for reading_session in reading_sessions:
         # print("Sesion")
         nodules = reading_session.find_all("unblindedReadNodule")
@@ -80,8 +81,9 @@ def load_lidc_xml(xml_path, agreement_threshold=0, only_patient=None, save_nodul
             rois = nodule.find_all("roi")
             x_min = y_min = z_min = 999999
             x_max = y_max = z_max = -999999
-            if len(rois) < 2:
-                continue
+            # This line to exclude small nodules (<3mm) for cancer detection
+            # if len(rois) < 2:
+            #    continue
             nodule_edges_x = []
             nodule_edges_y = []
             for roi in rois:
@@ -102,7 +104,7 @@ def load_lidc_xml(xml_path, agreement_threshold=0, only_patient=None, save_nodul
                     continue
                 if y_max == y_min:
                     continue
-            #TODO: Write the whole edges coordinate in CSV file
+            # TODO: Write the whole edges coordinate in CSV file
             x_diameter = x_max - x_min
             x_center = x_min + x_diameter / 2
             y_diameter = y_max - y_min
@@ -115,14 +117,28 @@ def load_lidc_xml(xml_path, agreement_threshold=0, only_patient=None, save_nodul
             x_center_perc = round(x_center / img_array.shape[2], 4)
             y_center_perc = round(y_center / img_array.shape[1], 4)
             z_center_perc = round(z_center / img_array.shape[0], 4)
-            diameter = max(x_diameter , y_diameter)
+            diameter = max(x_diameter, y_diameter)
             diameter_perc = round(max(x_diameter / img_array.shape[2], y_diameter / img_array.shape[1]), 4)
             diameter_perc_x = round(x_diameter / img_array.shape[2])
             diameter_perc_y = round(y_diameter / img_array.shape[1])
             if nodule.characteristics is None:
+                line = [nodule_id, x_center_perc, y_center_perc, z_center_perc, diameter_perc, 0]
+                extended_line = [patient_id, nodule_id, x_center_perc, y_center_perc, z_center_perc, diameter_perc,
+                                 diameter_perc_x, diameter_perc_y, 0, 0, 0, 0, 0,
+                                 0, 0, 0, 0]
+                pos_lines.append(line)
+                extended_lines.append(extended_line)
                 print("!!!!Nodule:", nodule_id, " has no charecteristics")
                 continue
+
+            print("!!!!Nodule:", nodule_id, " has no charecteristics")
             if nodule.characteristics.malignancy is None:
+                line = [nodule_id, x_center_perc, y_center_perc, z_center_perc, diameter_perc, 0]
+                extended_line = [patient_id, nodule_id, x_center_perc, y_center_perc, z_center_perc, diameter_perc,
+                                 diameter_perc_x, diameter_perc_y, 0, 0, 0, 0, 0,
+                                 0, 0, 0, 0]
+                pos_lines.append(line)
+                extended_lines.append(extended_line)
                 print("!!!!Nodule:", nodule_id, " has no malignacy")
                 continue
 
@@ -137,10 +153,12 @@ def load_lidc_xml(xml_path, agreement_threshold=0, only_patient=None, save_nodul
             subtlety = nodule.characteristics.subtlety.text
 
             line = [nodule_id, x_center_perc, y_center_perc, z_center_perc, diameter_perc, malignacy]
-            extended_line = [patient_id, nodule_id, x_center_perc, y_center_perc, z_center_perc, diameter_perc, diameter_perc_x, diameter_perc_y, malignacy, sphericiy, margin, spiculation, texture, calcification, internal_structure, lobulation, subtlety ]
+            extended_line = [patient_id, nodule_id, x_center_perc, y_center_perc, z_center_perc, diameter_perc,
+                             diameter_perc_x, diameter_perc_y, malignacy, sphericiy, margin, spiculation, texture,
+                             calcification, internal_structure, lobulation, subtlety]
             pos_lines.append(line)
             extended_lines.append(extended_line)
-            nodules_shape.append([nodule_id,nodule_edges_x,nodule_edges_y])
+            nodules_shape.append([nodule_id, nodule_edges_x, nodule_edges_y])
 
         nonNodules = reading_session.find_all("nonNodule")
         for nonNodule in nonNodules:
@@ -184,10 +202,13 @@ def load_lidc_xml(xml_path, agreement_threshold=0, only_patient=None, save_nodul
             #     print("Too few overlaps")
         pos_lines = filtered_lines
 
-    df_annos = pandas.DataFrame(pos_lines, columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore"])
-    df_annos.to_csv(settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_annos_pos_lidc.csv", index=False)
-    df_neg_annos = pandas.DataFrame(neg_lines, columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore"])
-    df_neg_annos.to_csv(settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_annos_neg_lidc.csv", index=False)
+   # df_annos = pandas.DataFrame(pos_lines,
+     #                           columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore"])
+    #df_annos.to_csv(settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_annos_pos_lidc.csv", index=False)
+    #df_neg_annos = pandas.DataFrame(neg_lines,
+     #                               columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore"])
+    #df_neg_annos.to_csv(settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_annos_neg_lidc.csv",
+     #                   index=False)
 
     # return [patient_id, spacing[0], spacing[1], spacing[2]]
     return pos_lines, neg_lines, extended_lines
@@ -200,6 +221,7 @@ def normalize(image):
     image[image > 1] = 1.
     image[image < 0] = 0.
     return image
+
 
 def get_pixels_hu(slices):
     image = numpy.stack([s.pixel_array for s in slices])
@@ -214,39 +236,47 @@ def get_pixels_hu(slices):
         image[slice_number] += numpy.int16(intercept)
 
     return numpy.array(image, dtype=numpy.int16)
-def cv_flip(img,cols,rows,degree):
-    M = cv2.getRotationMatrix2D((cols / 2, rows /2), degree, 1.0)
+
+
+def cv_flip(img, cols, rows, degree):
+    M = cv2.getRotationMatrix2D((cols / 2, rows / 2), degree, 1.0)
     dst = cv2.warpAffine(img, M, (cols, rows))
     return dst
+
+
 def extract_dicom_images_patient(src_dir):
     target_dir = settings.LIDC_EXTRACTED_IMAGE_DIR
-    #dir_path = settings.LIDC_RAW_SRC_DIR + src_dir + "/" + "/" + "/"
+    # dir_path = settings.LIDC_RAW_SRC_DIR + src_dir + "/" + "/" + "/"
     dir_path = src_dir
-    #src_dir = settings.LIDC_RAW_SRC_DIR + src_dir + "/"
-    #print("Dir: ", src_dir)
-    #for root, dirs, files in os.walk(src_dir):
+    # src_dir = settings.LIDC_RAW_SRC_DIR + src_dir + "/"
+    # print("Dir: ", src_dir)
+    # for root, dirs, files in os.walk(src_dir):
     #    if len(files) > 10:
     #        dir_path = root
     print("Dir_Path: ", src_dir)
     patient_id = os.path.basename(src_dir)
     search_dirs = os.listdir(settings.LIDC_EXTRACTED_IMAGE_DIR)
-    #if patient_id in search_dirs:
+    scan_path = settings.LIDC_EXTRACTED_IMAGE_DIR + patient_id + "/img_0033_i.png"
+    if os.path.exists(scan_path):
+        return
+    # if patient_id in search_dirs:
     #    return
 
     slices = load_patient(src_dir)
     print(len(slices), "\t", slices[0].SliceThickness, "\t", slices[0].PixelSpacing)
     print("Orientation: ", slices[0].ImageOrientationPatient)
-    #assert slices[0].ImageOrientationPatient == [1.000000, 0.000000, 0.000000, 0.000000, 1.000000, 0.000000]
+    # assert slices[0].ImageOrientationPatient == [1.000000, 0.000000, 0.000000, 0.000000, 1.000000, 0.000000]
     cos_value = (slices[0].ImageOrientationPatient[0])
-    cos_degree = round(math.degrees(math.acos(cos_value)),2)
-    
+    cos_degree = round(math.degrees(math.acos(cos_value)), 2)
+
     pixels = get_pixels_hu(slices)
     image = pixels
     print(image.shape)
 
     invert_order = slices[1].ImagePositionPatient[2] > slices[0].ImagePositionPatient[2]
-    print("Invert order: ", invert_order, " - ", slices[1].ImagePositionPatient[2], ",", slices[0].ImagePositionPatient[2])
-    #TODO: Standarize and normalize data
+    print("Invert order: ", invert_order, " - ", slices[1].ImagePositionPatient[2], ",",
+          slices[0].ImagePositionPatient[2])
+    # TODO: Standarize and normalize data
     pixel_spacing = slices[0].PixelSpacing
     pixel_spacing.append(slices[0].SliceThickness)
     print("Slice thik: ", slices[0].SliceThickness)
@@ -262,15 +292,17 @@ def extract_dicom_images_patient(src_dir):
         img_path = patient_dir + "img_" + str(i).rjust(4, '0') + "_i.png"
         org_img = image[i]
         # if there exists slope,rotation image with corresponding degree
-        if cos_degree>0.0:
-            org_img = cv_flip(org_img,org_img.shape[1],org_img.shape[0],cos_degree)
+        if cos_degree > 0.0:
+            org_img = cv_flip(org_img, org_img.shape[1], org_img.shape[0], cos_degree)
         img, mask = helpers.get_segmented_lungs(org_img.copy())
         org_img = helpers.normalize_hu(org_img)
-        #TODO: convert images to 10bit rather than 8 bit
+        # TODO: convert images to 10bit rather than 8 bit
         cv2.imwrite(img_path, org_img * 255)
         cv2.imwrite(img_path.replace("_i.png", "_m.png"), mask * 255)
+
+
 def load_patient(src_dir):
-    #slices = [dicom.read_file(src_dir + '/' + s) for s in os.listdir(src_dir)]
+    # slices = [dicom.read_file(src_dir + '/' + s) for s in os.listdir(src_dir)]
     slices = []
     print(src_dir)
     for files in glob.glob(src_dir + "/*.dcm"):
@@ -286,6 +318,7 @@ def load_patient(src_dir):
     for s in slices:
         s.SliceThickness = slice_thickness
     return slices
+
 
 def process_pos_annotations_patient(src_path, patient_id):
     df_node = pandas.read_csv("resources/annotations.csv")
@@ -303,15 +336,15 @@ def process_pos_annotations_patient(src_path, patient_id):
     df_patient = df_node[df_node["seriesuid"] == patient_id]
     print("Annos: ", len(df_patient))
 
-    num_z, height, width = img_array.shape        #heightXwidth constitute the transverse plane
-    origin = numpy.array(itk_img.GetOrigin())      # x,y,z  Origin in world coordinates (mm)
+    num_z, height, width = img_array.shape  # heightXwidth constitute the transverse plane
+    origin = numpy.array(itk_img.GetOrigin())  # x,y,z  Origin in world coordinates (mm)
     print("Origin (x,y,z): ", origin)
-    spacing = numpy.array(itk_img.GetSpacing())    # spacing of voxels in world coor. (mm)
+    spacing = numpy.array(itk_img.GetSpacing())  # spacing of voxels in world coor. (mm)
     print("Spacing (x,y,z): ", spacing)
-    rescale = spacing /settings.TARGET_VOXEL_MM
+    rescale = spacing / settings.TARGET_VOXEL_MM
     print("Rescale: ", rescale)
 
-    direction = numpy.array(itk_img.GetDirection())      # x,y,z  Origin in world coordinates (mm)
+    direction = numpy.array(itk_img.GetDirection())  # x,y,z  Origin in world coordinates (mm)
     print("Direction: ", direction)
     flip_direction_x = False
     flip_direction_y = False
@@ -344,7 +377,7 @@ def process_pos_annotations_patient(src_path, patient_id):
         diam_mm = annotation["diameter_mm"]
         print("Node org (x,y,z,diam): ", (round(node_x, 2), round(node_y, 2), round(node_z, 2), round(diam_mm, 2)))
         center_float = numpy.array([node_x, node_y, node_z])
-        center_int = numpy.rint((center_float-origin) / spacing)
+        center_int = numpy.rint((center_float - origin) / spacing)
         # center_int = numpy.rint((center_float - origin) )
         print("Node tra (x,y,z,diam): ", (center_int[0], center_int[1], center_int[2]))
         # center_int_rescaled = numpy.rint(((center_float-origin) / spacing) * rescale)
@@ -355,10 +388,12 @@ def process_pos_annotations_patient(src_path, patient_id):
         diameter_pixels = diam_mm / settings.TARGET_VOXEL_MM
         diameter_percent = diameter_pixels / float(patient_imgs.shape[1])
 
-        pos_annos.append([anno_index, round(center_float_percent[0], 4), round(center_float_percent[1], 4), round(center_float_percent[2], 4), round(diameter_percent, 4), 1])
+        pos_annos.append([anno_index, round(center_float_percent[0], 4), round(center_float_percent[1], 4),
+                          round(center_float_percent[2], 4), round(diameter_percent, 4), 1])
         anno_index += 1
 
-    df_annos = pandas.DataFrame(pos_annos, columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore"])
+    df_annos = pandas.DataFrame(pos_annos,
+                                columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore"])
     df_annos.to_csv(settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_annos_pos.csv", index=False)
     return [patient_id, spacing[0], spacing[1], spacing[2]]
 
@@ -388,15 +423,15 @@ def process_excluded_annotations_patient(src_path, patient_id):
     df_patient = df_node[df_node["seriesuid"] == patient_id]
     print("Annos: ", len(df_patient))
 
-    num_z, height, width = img_array.shape        #heightXwidth constitute the transverse plane
-    origin = numpy.array(itk_img.GetOrigin())      # x,y,z  Origin in world coordinates (mm)
+    num_z, height, width = img_array.shape  # heightXwidth constitute the transverse plane
+    origin = numpy.array(itk_img.GetOrigin())  # x,y,z  Origin in world coordinates (mm)
     print("Origin (x,y,z): ", origin)
-    spacing = numpy.array(itk_img.GetSpacing())    # spacing of voxels in world coor. (mm)
+    spacing = numpy.array(itk_img.GetSpacing())  # spacing of voxels in world coor. (mm)
     print("Spacing (x,y,z): ", spacing)
     rescale = spacing / settings.TARGET_VOXEL_MM
     print("Rescale: ", rescale)
 
-    direction = numpy.array(itk_img.GetDirection())      # x,y,z  Origin in world coordinates (mm)
+    direction = numpy.array(itk_img.GetDirection())  # x,y,z  Origin in world coordinates (mm)
     print("Direction: ", direction)
     flip_direction_x = False
     flip_direction_y = False
@@ -427,7 +462,7 @@ def process_excluded_annotations_patient(src_path, patient_id):
             node_y *= -1
         node_z = annotation["coordZ"]
         center_float = numpy.array([node_x, node_y, node_z])
-        center_int = numpy.rint((center_float-origin) / spacing)
+        center_int = numpy.rint((center_float - origin) / spacing)
         center_float_rescaled = (center_float - origin) / settings.TARGET_VOXEL_MM
         center_float_percent = center_float_rescaled / patient_imgs.swapaxes(0, 2).shape
         # center_int = numpy.rint((center_float - origin) )
@@ -444,8 +479,11 @@ def process_excluded_annotations_patient(src_path, patient_id):
             diameter = row["diameter"] * patient_imgs.shape[2]
             print((pos_coord_x, pos_coord_y, pos_coord_z))
             print(center_float_rescaled)
-            dist = math.sqrt(math.pow(pos_coord_x - center_float_rescaled[0], 2) + math.pow(pos_coord_y - center_float_rescaled[1], 2) + math.pow(pos_coord_z - center_float_rescaled[2], 2))
-            if dist < (diameter + 64):  #  make sure we have a big margin
+            dist = math.sqrt(
+                math.pow(pos_coord_x - center_float_rescaled[0], 2) + math.pow(pos_coord_y - center_float_rescaled[1],
+                                                                               2) + math.pow(
+                    pos_coord_z - center_float_rescaled[2], 2))
+            if dist < (diameter + 64):  # make sure we have a big margin
                 ok = False
                 print("################### Too close", center_float_rescaled)
                 break
@@ -458,8 +496,9 @@ def process_excluded_annotations_patient(src_path, patient_id):
                 diameter = row["d"] * patient_imgs.shape[2]
                 print((pos_coord_x, pos_coord_y, pos_coord_z))
                 print(center_float_rescaled)
-                dist = math.sqrt(math.pow(pos_coord_x - center_float_rescaled[0], 2) + math.pow(pos_coord_y - center_float_rescaled[1], 2) + math.pow(pos_coord_z - center_float_rescaled[2], 2))
-                if dist < (diameter + 72):  #  make sure we have a big margin
+                dist = math.sqrt(math.pow(pos_coord_x - center_float_rescaled[0], 2) + math.pow(
+                    pos_coord_y - center_float_rescaled[1], 2) + math.pow(pos_coord_z - center_float_rescaled[2], 2))
+                if dist < (diameter + 72):  # make sure we have a big margin
                     ok = False
                     print("################### Too close", center_float_rescaled)
                     break
@@ -467,10 +506,12 @@ def process_excluded_annotations_patient(src_path, patient_id):
         if not ok:
             continue
 
-        neg_annos.append([anno_index, round(center_float_percent[0], 4), round(center_float_percent[1], 4), round(center_float_percent[2], 4), round(diameter_percent, 4), 1])
+        neg_annos.append([anno_index, round(center_float_percent[0], 4), round(center_float_percent[1], 4),
+                          round(center_float_percent[2], 4), round(diameter_percent, 4), 1])
         anno_index += 1
 
-    df_annos = pandas.DataFrame(neg_annos, columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore"])
+    df_annos = pandas.DataFrame(neg_annos,
+                                columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore"])
     df_annos.to_csv(settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_annos_excluded.csv", index=False)
     return [patient_id, spacing[0], spacing[1], spacing[2]]
 
@@ -494,15 +535,15 @@ def process_luna_candidates_patient(src_path, patient_id):
     print("Img array: ", img_array.shape)
     print("Pos annos: ", len(df_pos_annos))
 
-    num_z, height, width = img_array.shape        #heightXwidth constitute the transverse plane
-    origin = numpy.array(itk_img.GetOrigin())      # x,y,z  Origin in world coordinates (mm)
+    num_z, height, width = img_array.shape  # heightXwidth constitute the transverse plane
+    origin = numpy.array(itk_img.GetOrigin())  # x,y,z  Origin in world coordinates (mm)
     print("Origin (x,y,z): ", origin)
-    spacing = numpy.array(itk_img.GetSpacing())    # spacing of voxels in world coor. (mm)
+    spacing = numpy.array(itk_img.GetSpacing())  # spacing of voxels in world coor. (mm)
     print("Spacing (x,y,z): ", spacing)
     rescale = spacing / settings.TARGET_VOXEL_MM
     print("Rescale: ", rescale)
 
-    direction = numpy.array(itk_img.GetDirection())      # x,y,z  Origin in world coordinates (mm)
+    direction = numpy.array(itk_img.GetDirection())  # x,y,z  Origin in world coordinates (mm)
     print("Direction: ", direction)
     flip_direction_x = False
     flip_direction_y = False
@@ -536,7 +577,7 @@ def process_luna_candidates_patient(src_path, patient_id):
         candidate_diameter = 6
         # print("Node org (x,y,z,diam): ", (round(node_x, 2), round(node_y, 2), round(node_z, 2), round(candidate_diameter, 2)))
         center_float = numpy.array([node_x, node_y, node_z])
-        center_int = numpy.rint((center_float-origin) / spacing)
+        center_int = numpy.rint((center_float - origin) / spacing)
         # center_int = numpy.rint((center_float - origin) )
         # print("Node tra (x,y,z,diam): ", (center_int[0], center_int[1], center_int[2]))
         # center_int_rescaled = numpy.rint(((center_float-origin) / spacing) * rescale)
@@ -555,8 +596,9 @@ def process_luna_candidates_patient(src_path, patient_id):
             pos_coord_y = row["coord_y"] * patient_imgs.shape[1]
             pos_coord_z = row["coord_z"] * patient_imgs.shape[0]
             diameter = row["diameter"] * patient_imgs.shape[2]
-            dist = math.sqrt(math.pow(pos_coord_x - coord_x, 2) + math.pow(pos_coord_y - coord_y, 2) + math.pow(pos_coord_z - coord_z, 2))
-            if dist < (diameter + 64):  #  make sure we have a big margin
+            dist = math.sqrt(math.pow(pos_coord_x - coord_x, 2) + math.pow(pos_coord_y - coord_y, 2) + math.pow(
+                pos_coord_z - coord_z, 2))
+            if dist < (diameter + 64):  # make sure we have a big margin
                 ok = False
                 print("################### Too close", (coord_x, coord_y, coord_z))
                 break
@@ -569,8 +611,9 @@ def process_luna_candidates_patient(src_path, patient_id):
                 diameter = row["d"] * patient_imgs.shape[2]
                 print((pos_coord_x, pos_coord_y, pos_coord_z))
                 print(center_float_rescaled)
-                dist = math.sqrt(math.pow(pos_coord_x - center_float_rescaled[0], 2) + math.pow(pos_coord_y - center_float_rescaled[1], 2) + math.pow(pos_coord_z - center_float_rescaled[2], 2))
-                if dist < (diameter + 72):  #  make sure we have a big margin
+                dist = math.sqrt(math.pow(pos_coord_x - center_float_rescaled[0], 2) + math.pow(
+                    pos_coord_y - center_float_rescaled[1], 2) + math.pow(pos_coord_z - center_float_rescaled[2], 2))
+                if dist < (diameter + 72):  # make sure we have a big margin
                     ok = False
                     print("################### Too close", center_float_rescaled)
                     break
@@ -578,9 +621,12 @@ def process_luna_candidates_patient(src_path, patient_id):
         if not ok:
             continue
 
-        candidate_list.append([len(candidate_list), round(center_float_percent[0], 4), round(center_float_percent[1], 4), round(center_float_percent[2], 4), round(candidate_diameter / patient_imgs.shape[0], 4), 0])
+        candidate_list.append(
+            [len(candidate_list), round(center_float_percent[0], 4), round(center_float_percent[1], 4),
+             round(center_float_percent[2], 4), round(candidate_diameter / patient_imgs.shape[0], 4), 0])
 
-    df_candidates = pandas.DataFrame(candidate_list, columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore"])
+    df_candidates = pandas.DataFrame(candidate_list,
+                                     columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore"])
     df_candidates.to_csv(dst_dir + patient_id + "_candidates_luna.csv", index=False)
 
 
@@ -604,10 +650,10 @@ def process_auto_candidates_patient(src_path, patient_id, sample_count=1000, can
     print("Img array: ", img_array.shape)
     print("Pos annos: ", len(df_pos_annos))
 
-    num_z, height, width = img_array.shape        #heightXwidth constitute the transverse plane
-    origin = numpy.array(itk_img.GetOrigin())      # x,y,z  Origin in world coordinates (mm)
+    num_z, height, width = img_array.shape  # heightXwidth constitute the transverse plane
+    origin = numpy.array(itk_img.GetOrigin())  # x,y,z  Origin in world coordinates (mm)
     print("Origin (x,y,z): ", origin)
-    spacing = numpy.array(itk_img.GetSpacing())    # spacing of voxels in world coor. (mm)
+    spacing = numpy.array(itk_img.GetSpacing())  # spacing of voxels in world coor. (mm)
     print("Spacing (x,y,z): ", spacing)
     rescale = spacing / settings.TARGET_VOXEL_MM
     print("Rescale: ", rescale)
@@ -645,8 +691,9 @@ def process_auto_candidates_patient(src_path, patient_id, sample_count=1000, can
             pos_coord_y = row["coord_y"] * src_candidate_maps[0].shape[0]
             pos_coord_z = row["coord_z"] * len(src_files)
             diameter = row["diameter"] * src_candidate_maps[0].shape[1]
-            dist = math.sqrt(math.pow(pos_coord_x - coord_x, 2) + math.pow(pos_coord_y - coord_y, 2) + math.pow(pos_coord_z - coord_z, 2))
-            if dist < (diameter + 48): #  make sure we have a big margin
+            dist = math.sqrt(math.pow(pos_coord_x - coord_x, 2) + math.pow(pos_coord_y - coord_y, 2) + math.pow(
+                pos_coord_z - coord_z, 2))
+            if dist < (diameter + 48):  # make sure we have a big margin
                 ok = False
                 print("# Too close", (coord_x, coord_y, coord_z))
                 break
@@ -659,24 +706,26 @@ def process_auto_candidates_patient(src_path, patient_id, sample_count=1000, can
                 diameter = row["d"] * src_candidate_maps[0].shape[1]
                 # print((pos_coord_x, pos_coord_y, pos_coord_z))
                 # print(center_float_rescaled)
-                dist = math.sqrt(math.pow(pos_coord_x - coord_x, 2) + math.pow(pos_coord_y - coord_y, 2) + math.pow(pos_coord_z - coord_z, 2))
-                if dist < (diameter + 72):  #  make sure we have a big margin
+                dist = math.sqrt(math.pow(pos_coord_x - coord_x, 2) + math.pow(pos_coord_y - coord_y, 2) + math.pow(
+                    pos_coord_z - coord_z, 2))
+                if dist < (diameter + 72):  # make sure we have a big margin
                     ok = False
-                    print("#Too close",  (coord_x, coord_y, coord_z))
+                    print("#Too close", (coord_x, coord_y, coord_z))
                     break
 
         if not ok:
             continue
 
-
         perc_x = round(coord_x / src_candidate_maps[coord_z].shape[1], 4)
         perc_y = round(coord_y / src_candidate_maps[coord_z].shape[0], 4)
         perc_z = round(coord_z / len(src_files), 4)
-        candidate_list.append([len(candidate_list), perc_x, perc_y, perc_z, round(candidate_diameter / src_candidate_maps[coord_z].shape[1], 4), 0])
+        candidate_list.append([len(candidate_list), perc_x, perc_y, perc_z,
+                               round(candidate_diameter / src_candidate_maps[coord_z].shape[1], 4), 0])
 
     if tries > 9999:
         print("****** WARING!! TOO MANY TRIES ************************************")
-    df_candidates = pandas.DataFrame(candidate_list, columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore"])
+    df_candidates = pandas.DataFrame(candidate_list,
+                                     columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore"])
     df_candidates.to_csv(dst_dir + patient_id + "_candidates_" + candidate_type + ".csv", index=False)
 
 
@@ -690,11 +739,11 @@ def process_images(delete_existing=False, only_process_patient=None):
         os.mkdir(settings.LIDC_EXTRACTED_IMAGE_DIR)
         os.mkdir(settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/")
 
-    src_dir = settings.LIDC_RAW_SRC_DIR #+ "subset" + str(subject_no) + "/"
+    src_dir = settings.LIDC_RAW_SRC_DIR  # + "subset" + str(subject_no) + "/"
 
-    addedNotExist =  False
+    addedNotExist = False
     src_path = []
-    for src_p in glob.glob(src_dir + "*/*/*/*29.dcm"):
+    for src_p in glob.glob(src_dir + "*/*/*/*30.dcm"):
         # if not "100621383016233746780170740405" in src_path:
         #     continue
         src_p = os.path.split(src_p)[0]
@@ -705,12 +754,11 @@ def process_images(delete_existing=False, only_process_patient=None):
         pool = Pool(settings.WORKER_POOL_SIZE)
         pool.map(extract_dicom_images_patient, src_path)
     else:
-        #only_process_patient = "LIDC-IDRI-0132"
+        # only_process_patient = "LIDC-IDRI-0132"
         for src_p in src_path:
             patient_id = ntpath.basename(src_p)
             if patient_id == only_process_patient:
                 extract_dicom_images_patient(src_p)
-
 
 
 def process_pos_annotations_patient2():
@@ -774,18 +822,20 @@ def process_luna_candidates_patients(only_patient_id=None):
         process_luna_candidates_patient(src_path, patient_id)
         patient_index += 1
 
+
 def process_lidc_annotations(only_patient=None, agreement_threshold=0):
     # lines.append(",".join())
     file_no = 0
     pos_count = 0
     neg_count = 0
     all_lines = []
-    #for anno_dir in [d for d in glob.glob(settings.LIDC_RAW_SRC_DIR+"*/*/*") if os.path.isdir(d)]:
+    # for anno_dir in [d for d in glob.glob(settings.LIDC_RAW_SRC_DIR+"*/*/*") if os.path.isdir(d)]:
     for anno_dir in [d for d in glob.glob(settings.LIDC_LABEL + "*") if os.path.isdir(d)]:
         xml_paths = glob.glob(anno_dir + "/*.xml")
         for xml_path in xml_paths:
-            print(file_no, ": ",  xml_path)
-            pos, neg, extended = load_lidc_xml(xml_path=xml_path, only_patient=only_patient, agreement_threshold=agreement_threshold)
+            print(file_no, ": ", xml_path)
+            pos, neg, extended = load_lidc_xml(xml_path=xml_path, only_patient=only_patient,
+                                               agreement_threshold=agreement_threshold)
             if pos is not None:
                 pos_count += len(pos)
                 neg_count += len(neg)
@@ -796,17 +846,18 @@ def process_lidc_annotations(only_patient=None, agreement_threshold=0):
             #     break
 
             # extended_line = [nodule_id, x_center_perc, y_center_perc, z_center_perc, diameter_perc, malignacy, sphericiy, margin, spiculation, texture, calcification, internal_structure, lobulation, subtlety ]
-    df_annos = pandas.DataFrame(all_lines, columns=["patient_id", "anno_index", "coord_x", "coord_y", "coord_z", "max_diameter","diameter_x","diameter_y", "malscore", "sphericiy", "margin", "spiculation", "texture", "calcification", "internal_structure", "lobulation", "subtlety"])
+    df_annos = pandas.DataFrame(all_lines,
+                                columns=["patient_id", "anno_index", "coord_x", "coord_y", "coord_z", "max_diameter",
+                                         "diameter_x", "diameter_y", "malscore", "sphericiy", "margin", "spiculation",
+                                         "texture", "calcification", "internal_structure", "lobulation", "subtlety"])
     df_annos.to_csv(settings.BASE_DIR + "lidc_annotations.csv", index=False)
 
 
 if __name__ == "__main__":
     if False:
         print("step 1 Process images...")
-        #only_process_patient = "1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860"
-        list_process = ["1.3.6.1.4.1.14519.5.2.1.6279.6001.144883090372691745980459537053","1.3.6.1.4.1.14519.5.2.1.6279.6001.148447286464082095534651426689","1.3.6.1.4.1.14519.5.2.1.6279.6001.177252583002664900748714851615","1.3.6.1.4.1.14519.5.2.1.6279.6001.219349715895470349269596532320","1.3.6.1.4.1.14519.5.2.1.6279.6001.312127933722985204808706697221","1.3.6.1.4.1.14519.5.2.1.6279.6001.943403138251347598519939390311","1.3.6.1.4.1.14519.5.2.1.6279.6001.964952370561266624992539111877"]
-        for patiant in list_process:
-            process_images(delete_existing=False, only_process_patient=patiant)
+        # only_process_patient = "1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860"
+        process_images(delete_existing=False, only_process_patient=None)
 
     if True:
         print("step 2 Process LIDC annotation...")
@@ -817,9 +868,9 @@ if __name__ == "__main__":
         print("step 4 Process excluded annotation...")
         process_excluded_annotations_patients(only_patient=None)
 
-    if True:
+    if False:
         print("step 5 Process luna candidates patients...")
         process_luna_candidates_patients(only_patient_id=None)
-    if True:
+    if False:
         print("step 6 Process auto candidates patients...")
         process_auto_candidates_patients()
