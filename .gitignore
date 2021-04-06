@@ -33,12 +33,9 @@ MANIFEST
 __pycache__
 logs/
 workdir/
-<<<<<<< HEAD
 models/
 models
 *.rar
-=======
->>>>>>> 5908c8233f4f4d2b3d959197b6b8e687f65111d0
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
