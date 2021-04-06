@@ -367,6 +367,7 @@ def train(model_name, fold_count, train_full_set=False, load_weights_path=None, 
 
     model.save(os.path.join("workdir\\model_" + model_name + "_" + holdout_txt + "_end.hd5"))
 
+<<<<<<< HEAD
 def evaluate(image_label=None, model_path= None):
     cubic_images = pandas.read_csv(image_label,sep=',').values.tolist()
     #print(cubic_images)
@@ -524,6 +525,9 @@ def compute_class_sens_spec(pred, label):
     ### END CODE HERE ###
     return fp,fn
     #return sensitivity, specificity
+=======
+
+>>>>>>> 5908c8233f4f4d2b3d959197b6b8e687f65111d0
 if __name__ == "__main__":
     if False:
         # model 1 on luna16 annotations. full set 1 versions for blending
@@ -532,9 +536,12 @@ if __name__ == "__main__":
             os.mkdir("models")
         shutil.copy("workdir/model_luna16_full__fs_best.hd5", "models/model_luna16_full__fs_best.hd5")
 
+<<<<<<< HEAD
     # This part to calculate metrics from the model
     if True:
         evaluate(image_label=settings.BASE_DIR_SSD + "Test_data.csv",model_path="models/model_luna16_full__fs_best.hd5")
 
 
 
+=======
+>>>>>>> 5908c8233f4f4d2b3d959197b6b8e687f65111d0
