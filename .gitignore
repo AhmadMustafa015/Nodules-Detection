@@ -33,12 +33,15 @@ MANIFEST
 __pycache__
 logs/
 workdir/
+models/
+models
+*.rar
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
-
+models/model_luna16_full__fs_best.hd5/variables/variables.data-00001-of-00002
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt

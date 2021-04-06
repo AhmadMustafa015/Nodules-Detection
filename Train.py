@@ -367,12 +367,174 @@ def train(model_name, fold_count, train_full_set=False, load_weights_path=None, 
 
     model.save(os.path.join("workdir\\model_" + model_name + "_" + holdout_txt + "_end.hd5"))
 
+def evaluate(image_label=None, model_path= None):
+    cubic_images = pandas.read_csv(image_label,sep=',').values.tolist()
+    #print(cubic_images)
+    total_number_of_ct = 0
+    labels = []
+    pred_labels = []
+    batch_size = 128
+    batch_list = []
+    model = tf.keras.models.load_model(model_path)
+    batch_list_coords = []
+    patient_predictions_csv = []
+    P_TH = 0.6
+    model.summary()
+    pos_number=0
+    neg_number=0
+    random.shuffle(cubic_images)
+    cubic_statestic = []
+    for row in cubic_images:
+        #row.set_option('display.max_colwidth', None)
+        root_dir = os.path.basename(row[0])
+        parts = root_dir.split("_")
+        class_label = int(parts[-2])
+        patient_id = parts[0]
+        labels.append(class_label)
+        if class_label == 1:
+            cube_image = helpers.load_cube_img(row[0], 8, 8, 64)
+            CROP_SIZE = CUBE_SIZE
+            pos_number+=1
+            current_cube_size = cube_image.shape[0]
+            indent_x = (current_cube_size - CROP_SIZE) / 2
+            indent_y = (current_cube_size - CROP_SIZE) / 2
+            indent_z = (current_cube_size - CROP_SIZE) / 2
+            wiggle_indent = 0
+            wiggle = current_cube_size - CROP_SIZE - 1
+            if wiggle > (CROP_SIZE / 2):
+                wiggle_indent = CROP_SIZE / 4
+                wiggle = current_cube_size - CROP_SIZE - CROP_SIZE / 2 - 1
 
+            indent_x = int(indent_x)
+            indent_y = int(indent_y)
+            indent_z = int(indent_z)
+            cube_image = cube_image[indent_z:indent_z + CROP_SIZE, indent_y:indent_y + CROP_SIZE,
+                         indent_x:indent_x + CROP_SIZE]
+        else:
+            cube_image = helpers.load_cube_img(row[0], 6, 8, 48)
+            #CROP_SIZE = 48
+            neg_number +=1
+            wiggle = 48 - CROP_SIZE - 1
+            indent_x = 0
+            indent_y = 0
+            indent_z = 0
+            if wiggle > 0:
+                indent_x = random.randint(0, wiggle)
+                indent_y = random.randint(0, wiggle)
+                indent_z = random.randint(0, wiggle)
+            cube_image = cube_image[indent_z:indent_z + CROP_SIZE, indent_y:indent_y + CROP_SIZE,
+                         indent_x:indent_x + CROP_SIZE]
+
+
+        assert cube_image.shape == (CUBE_SIZE, CUBE_SIZE, CUBE_SIZE)
+        img_prep = prepare_image_for_net3D(cube_image)
+        #batch_list.append(img_prep)
+        #if len(batch_list) % batch_size == 0:
+        #batch_data = numpy.vstack(batch_list)
+        p = model.predict(img_prep, batch_size=1)
+        #for i in range(len(p[0])):
+        nodule_chance = p[0][0]
+        if p[0][0] > P_TH:
+            pred_labels.append(1)
+            if class_label == 1:
+                status = "tp"
+            else:
+                status = "fp"
+        else:
+            pred_labels.append(0)
+            if class_label == 0:
+                status = "tn"
+            else:
+                status = "fn"
+
+        cubic_statestic.append([patient_id,class_label,pred_labels[-1],p[0][0],status])
+        print("nodule_chance: ", nodule_chance,"\tTrue_label: ",class_label)
+        print(root_dir)
+    if not os.path.exists("prediction"):
+        os.mkdir("prediction")
+    df_pred_cube = pandas.DataFrame(cubic_statestic,columns=["patient_id", "true_label", "pred_label","prediction_value", "status"])
+    df_pred_cube.to_csv(settings.LIDC_PREDICTION_DIR + "predictions_per_cube.csv", index=False)
+    #df_scan = pandas.DataFrame(index=len(df_pred_cube['patient_id'].unique()), columns=["patient_id", "total_pos", "total_neg","FP", "FN","sensitivity","specificity"])
+    ct_statestic = []
+    for patient in df_pred_cube['patient_id'].unique():
+        df = df_pred_cube.loc[df_pred_cube["patient_id"] == str(patient)]
+        pos_count = len(df.loc[df["true_label"] == 1])
+        neg_count = len(df.loc[df["true_label"] == 0])
+        tp_count = len(df.loc[df["status"] == "tp"])
+        tn_count = len(df.loc[df["status"] == "tn"])
+        fp_count = len(df.loc[df["status"] == "fp"])
+        fn_count = len(df.loc[df["status"] == "fn"])
+        sens = tp_count/(tp_count+fn_count)
+        spec = tn_count/(tn_count+fp_count)
+        ct_statestic.append([str(patient),pos_count,neg_count,fp_count,fn_count,sens,spec])
+    df_scan = pandas.DataFrame(ct_statestic,columns=["patient_id", "total_pos", "total_neg","FP", "FN","sensitivity","specificity"])
+    df_scan.to_csv(settings.LIDC_PREDICTION_DIR + "predictions_per_ct_scan.csv", index=False)
+    sensitivity = numpy.mean(ct_statestic[:,5])
+    specificity = numpy.mean(ct_statestic[:,6])
+    print("Total number of positive = ", pos_number, "Total number of negative = ", neg_number)
+    sensitivity, specificity = compute_class_sens_spec(pred_labels,labels)
+    print("sensitivity: ",sensitivity,"specificity: ", specificity)
+
+def compute_class_sens_spec(pred, label):
+    """
+    Compute sensitivity and specificity for a particular example
+    for a given class.
+
+    Args:
+        pred (np.array): binary arrary of predictions, shape is
+                         (num classes, height, width, depth).
+        label (np.array): binary array of labels, shape is
+                          (num classes, height, width, depth).
+        class_num (int): number between 0 - (num_classes -1) which says
+                         which prediction class to compute statistics
+                         for.
+
+    Returns:
+        sensitivity (float): precision for given class_num.
+        specificity (float): recall for given class_num
+    """
+
+    # extract sub-array for specified class
+    class_pred = pred
+    class_label = label
+
+    ### START CODE HERE (REPLACE INSTANCES OF 'None' with your code) ###
+
+    # compute:
+
+    # true positives
+    tp = numpy.sum((class_pred == 1) & (class_label == 1))
+
+    # compute sensitivity and specificity
+
+    # true negatives
+    tn = numpy.sum((class_pred == 0) & (class_label == 0))
+
+    # false positives
+    fp = numpy.sum((class_pred == 1) & (class_label == 0))
+
+    # false negatives
+    fn = numpy.sum((class_pred == 0) & (class_label == 1))
+
+    # compute sensitivity and specificity
+    sensitivity = tp / (tp + fn)
+    print(sensitivity)
+    specificity = tn / (tn + fp)
+    print(specificity)
+    ### END CODE HERE ###
+    return fp,fn
+    #return sensitivity, specificity
 if __name__ == "__main__":
-    if True:
+    if False:
         # model 1 on luna16 annotations. full set 1 versions for blending
         train(train_full_set=True, load_weights_path=None, model_name="luna16_full", fold_count=-1, manual_labels=False)
         if not os.path.exists("models/"):
             os.mkdir("models")
         shutil.copy("workdir/model_luna16_full__fs_best.hd5", "models/model_luna16_full__fs_best.hd5")
+
+    # This part to calculate metrics from the model
+    if True:
+        evaluate(image_label=settings.BASE_DIR_SSD + "Test_data.csv",model_path="models/model_luna16_full__fs_best.hd5")
+
+
 
