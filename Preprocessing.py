@@ -201,11 +201,6 @@ def load_lidc_xml(xml_path, agreement_threshold=0, only_patient=None, save_nodul
             # else:
             #     print("Too few overlaps")
         pos_lines = filtered_lines
-
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 5f0925181973786c61497a07bb161b2d00efea53
    # df_annos = pandas.DataFrame(pos_lines,
      #                           columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore"])
     #df_annos.to_csv(settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_annos_pos_lidc.csv", index=False)
@@ -213,8 +208,6 @@ def load_lidc_xml(xml_path, agreement_threshold=0, only_patient=None, save_nodul
      #                               columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore"])
     #df_neg_annos.to_csv(settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_annos_neg_lidc.csv",
      #                   index=False)
-<<<<<<< HEAD
-=======
     df_annos = pandas.DataFrame(pos_lines,
                                 columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore"])
     df_annos.to_csv(settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_annos_pos_lidc.csv", index=False)
@@ -222,10 +215,6 @@ def load_lidc_xml(xml_path, agreement_threshold=0, only_patient=None, save_nodul
                                     columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore"])
     df_neg_annos.to_csv(settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_annos_neg_lidc.csv",
                         index=False)
->>>>>>> 5908c8233f4f4d2b3d959197b6b8e687f65111d0
-=======
->>>>>>> 5f0925181973786c61497a07bb161b2d00efea53
-
     # return [patient_id, spacing[0], spacing[1], spacing[2]]
     return pos_lines, neg_lines, extended_lines
 

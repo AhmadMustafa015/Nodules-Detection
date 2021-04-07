@@ -15,7 +15,7 @@ import math
 # limit memory usage..
 import tensorflow as tf
 from tensorflow.compat.v1.keras.backend import set_session
-import step2_train_nodule_detector
+import Train
 config = tf.compat.v1.ConfigProto()
 config.gpu_options.per_process_gpu_memory_fraction = 0.5
 set_session(tf.compat.v1.Session(config=config))
@@ -25,7 +25,7 @@ set_session(tf.compat.v1.Session(config=config))
 # 32 x 32 x 32 lijkt het beter te doen dan 48 x 48 x 48..
 
 #K.common.set_image_dim_ordering("tf")
-CUBE_SIZE = step2_train_nodule_detector.CUBE_SIZE
+CUBE_SIZE = Train.CUBE_SIZE
 MEAN_PIXEL_VALUE = settings.MEAN_PIXEL_VALUE_NODULE
 NEGS_PER_POS = 20
 P_TH = 0.6
@@ -53,7 +53,6 @@ def filter_patient_nodules_predictions(df_nodule_predictions: pandas.DataFrame, 
         center_y = int(round(y_perc * patient_mask.shape[1]))
         center_z = int(round(z_perc * patient_mask.shape[0]))
 
-        mal_score = row["diameter_mm"]
         start_y = center_y - view_size / 2
         start_x = center_x - view_size / 2
         nodule_in_mask = False
@@ -68,15 +67,11 @@ def filter_patient_nodules_predictions(df_nodule_predictions: pandas.DataFrame, 
 
         if not nodule_in_mask:
             print("Nodule not in mask: ", (center_x, center_y, center_z))
-            if mal_score > 0:
-                mal_score *= -1
-            df_nodule_predictions.loc[index, "diameter_mm"] = mal_score
+
         else:
             if center_z < 30:
                 print("Z < 30: ", patient_id, " center z:", center_z, " y_perc: ",  y_perc)
-                if mal_score > 0:
-                    mal_score *= -1
-                df_nodule_predictions.loc[index, "diameter_mm"] = mal_score
+
 
 
             if (z_perc > 0.75 or z_perc < 0.25) and y_perc > 0.85:
@@ -103,7 +98,7 @@ def filter_nodule_predictions(only_patient_id=None):
 
 
 def make_negative_train_data_based_on_predicted_luna_nodules():
-    src_dir = settings.LUNA_NODULE_DETECTION_DIR
+    src_dir = settings.LIDC_PREDICTION_DIR
     pos_labels_dir = settings.LUNA_NODULE_LABELS_DIR
     keep_dist = CUBE_SIZE + CUBE_SIZE / 2
     total_false_pos = 0
@@ -157,12 +152,9 @@ def make_negative_train_data_based_on_predicted_luna_nodules():
     print("Total false pos:", total_false_pos)
 
 
-def predict_cubes(model_path, continue_job, only_patient_id=None, luna16=False, magnification=1, flip=False, train_data=True, holdout_no=-1, ext_name="", fold_count=2):
+def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, magnification=1, flip=False, ext_name="",input_format = "dicom"):
     # choose which directory you should store output at
-    if luna16:
-        dst_dir = settings.LUNA_NODULE_DETECTION_DIR
-    else:
-        dst_dir = settings.NDSB3_NODULE_DETECTION_DIR
+    dst_dir = settings.LIDC_PREDICTION_DIR
     if not os.path.exists(dst_dir):
         os.makedirs(dst_dir)
 
@@ -179,50 +171,46 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, luna16=False, 
 
     sw = helpers.Stopwatch.start_new()
     # get the pre trained model
-    #model = step2_train_nodule_detector.get_net(input_shape=(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE, 1), load_weight_path=model_path)
+    #model = Train.get_net(input_shape=(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE, 1), load_weight_path=model_path)
     model = tf.keras.models.load_model(model_path)
-    if not luna16:
-        if train_data:
-            labels_df = pandas.read_csv("resources/stage1_labels.csv")
-            labels_df.set_index(["id"], inplace=True)
-        else:
-            labels_df = pandas.read_csv("resources/stage2_sample_submission.csv")
-            labels_df.set_index(["id"], inplace=True)
-
     patient_ids = []
-    for file_name in os.listdir(settings.NDSB3_EXTRACTED_IMAGE_DIR):
-        if not os.path.isdir(settings.NDSB3_EXTRACTED_IMAGE_DIR + file_name):
+
+    cubic_images = pandas.read_csv(settings.BASE_DIR_SSD + "Test_data.csv", sep=',').values.tolist()
+    model.summary()
+    random.shuffle(cubic_images)
+    for row in cubic_images:
+        root_dir = os.path.basename(row[0])
+        parts = root_dir.split("_")
+        if parts[0] in patient_ids:
             continue
-        patient_ids.append(file_name)
+        patient_ids.append(parts[0])
 
     all_predictions_csv = []
     for patient_index, patient_id in enumerate(reversed(patient_ids)):
-        if not luna16:
-            if patient_id not in labels_df.index:
-                continue
         # AM: TODO find the mean of metadata
         if "metadata" in patient_id:
             continue
         if only_patient_id is not None and only_patient_id != patient_id:
             continue
         # TODO: real use of holdout
-        if holdout_no is not None and train_data:
-            patient_fold = helpers.get_patient_fold(patient_id)
-            patient_fold %= fold_count
-            if patient_fold != holdout_no:
-                continue
 
         print(patient_index, ": ", patient_id)
+        if lidc and only_patient_id is None:
+            csv_label_path = settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_annos_neg_lidc.csv"
         csv_target_path = dst_dir + patient_id + ".csv"
         if continue_job and only_patient_id is None:
             if os.path.exists(csv_target_path):
                 continue
-
-        patient_img = helpers.load_patient_images(patient_id, settings.NDSB3_EXTRACTED_IMAGE_DIR, "*_i.png", [])
+        if lidc:
+            patient_img = helpers.load_patient_images(patient_id, settings.LIDC_EXTRACTED_IMAGE_DIR, "*_i.png", [])
+        else:
+            patient_img = helpers.load_patient_images(patient_id, settings.NDSB3_EXTRACTED_IMAGE_DIR, "*_i.png", [])
         if magnification != 1:
             patient_img = helpers.rescale_patient_images(patient_img, (1, 1, 1), magnification)
-
-        patient_mask = helpers.load_patient_images(patient_id, settings.NDSB3_EXTRACTED_IMAGE_DIR, "*_m.png", [])
+        if lidc:
+            patient_mask = helpers.load_patient_images(patient_id, settings.LIDC_EXTRACTED_IMAGE_DIR, "*_m.png", [])
+        else:
+            patient_mask = helpers.load_patient_images(patient_id, settings.NDSB3_EXTRACTED_IMAGE_DIR, "*_m.png", [])
         if magnification != 1:
             patient_mask = helpers.rescale_patient_images(patient_mask, (1, 1, 1), magnification, is_mask_image=True)
 
@@ -252,16 +240,6 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, luna16=False, 
         cube_img = None
         annotation_index = 0
         iteration = 0
-        #print(predict_volume_shape[0], predict_volume_shape[1], predict_volume_shape[2])
-        #temp = 0
-        #for z in range(0, predict_volume_shape[0]):
-        #    for y in range(0, predict_volume_shape[1]):
-        #        for x in range(0, predict_volume_shape[2]):
-        #            print("Cube: ", temp)
-        #            print("Z:0 ", z * step, "Z:1", z * step+CROP_SIZE, "Y:0", y * step, "Y:1", y * step + CROP_SIZE, "X:0", x * step,"X:1", x * step+CROP_SIZE)
-        #            temp = temp +1
-
-        #stop
         for z in range(0, predict_volume_shape[0]):
             for y in range(0, predict_volume_shape[1]):
                 for x in range(0, predict_volume_shape[2]):
@@ -279,7 +257,7 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, luna16=False, 
                             cube_img = helpers.rescale_patient_images2(cube_img, (CUBE_SIZE, CUBE_SIZE, CUBE_SIZE))
                             # helpers.save_cube_img("c:/tmp/cube.png", cube_img, 8, 4)
                             # cube_mask = helpers.rescale_patient_images2(cube_mask, (CUBE_SIZE, CUBE_SIZE, CUBE_SIZE))
-                        print(cube_img.shape)
+                        #print(cube_img.shape)
                         #helpers.save_cube_img(dst_dir + patient_id + "__" + str(annotation_index) + "__"+str(iteration) + ".png", cube_img, 4, 8)
                         img_prep = prepare_image_for_net3D(cube_img)
                         batch_list.append(img_prep)
@@ -295,7 +273,7 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, luna16=False, 
                                 p_z = batch_list_coords[i][0]
                                 p_y = batch_list_coords[i][1]
                                 p_x = batch_list_coords[i][2]
-                                nodule_chance = p[0][i][0]
+                                nodule_chance = p[i][0]
                                 print("nodule_chance:", nodule_chance)
                                 predict_volume[p_z, p_y, p_x] = nodule_chance
                                 if nodule_chance > P_TH:
@@ -304,35 +282,33 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, luna16=False, 
                                     p_x = p_x * step + CROP_SIZE / 2
                                     #diameter_mm = round(p[1][i][0], 4)
                                     diameter_mm = 32.0
-                                    print (patient_img.shape[0], patient_img.shape[1], patient_img.shape[2])
+                                    #print (patient_img.shape[0], patient_img.shape[1], patient_img.shape[2])
 
                                     p_z_perc = round(p_z / patient_img.shape[0], 4)
                                     p_y_perc = round(p_y / patient_img.shape[1], 4)
                                     p_x_perc = round(p_x / patient_img.shape[2], 4)
 
-                                    p_x,p_y,slice_num = helpers.percentage_to_pixels(p_x_perc, p_y_perc, p_z_perc, patient_img)
-                                    src_img_paths = settings.NDSB3_EXTRACTED_IMAGE_DIR + patient_id + "/" + "img_" + str(
-                                        slice_num).rjust(4, '0') + "_i.png"
-                                    print(settings.NDSB3_EXTRACTED_IMAGE_DIR + patient_id + "/" + "img_" + str(
-                                        slice_num).rjust(4, '0') + "_i.png")
-                                    slice_img = cv2.imread(src_img_paths, cv2.IMREAD_GRAYSCALE)
-                                    xymax = (int(p_x + diameter_mm / 2), int(p_y + diameter_mm / 2))
-                                    xymin = (int(p_x - diameter_mm / 2), int(p_y - diameter_mm / 2))
-                                    colorRGB = (255, 255, 0)
-                                    print(xymin, xymax, diameter_mm)
-                                    gray_BGR = cv2.cvtColor(slice_img, cv2.COLOR_GRAY2BGR)
-                                    image = cv2.rectangle(gray_BGR, xymin, xymax, colorRGB, 1)
-                                    cv2.imwrite(dst_dir + "/Annotation_V2/" + "Positive_nodule_" + str(
-                                        nodule_chance) + patient_id + "__" + str(annotation_index) + "__" + str(
-                                        iteration) + ".png", image)
+                                    #p_x,p_y,slice_num = helpers.percentage_to_pixels(p_x_perc, p_y_perc, p_z_perc, patient_img)
+                                    #src_img_paths = settings.NDSB3_EXTRACTED_IMAGE_DIR + patient_id + "/" + "img_" + str(
+                                    #    slice_num).rjust(4, '0') + "_i.png"
+                                    #print(settings.NDSB3_EXTRACTED_IMAGE_DIR + patient_id + "/" + "img_" + str(
+                                    #    slice_num).rjust(4, '0') + "_i.png")
+                                    #slice_img = cv2.imread(src_img_paths, cv2.IMREAD_GRAYSCALE)
+                                    #xymax = (int(p_x + diameter_mm / 2), int(p_y + diameter_mm / 2))
+                                    #xymin = (int(p_x - diameter_mm / 2), int(p_y - diameter_mm / 2))
+                                    #colorRGB = (255, 255, 0)
+                                    #print(xymin, xymax, diameter_mm)
+                                    #gray_BGR = cv2.cvtColor(slice_img, cv2.COLOR_GRAY2BGR)
+                                    #image = cv2.rectangle(gray_BGR, xymin, xymax, colorRGB, 1)
+                                    #cv2.imwrite(dst_dir + "/Annotation_V2/" + "Positive_nodule_" + str(
+                                    #    nodule_chance) + patient_id + "__" + str(annotation_index) + "__" + str(
+                                    #    iteration) + ".png", image)
 
                                     # diameter_perc = round(2 * step / patient_img.shape[2], 4)
-                                    diameter_perc = round(2 * step / patient_img.shape[2], 4)
-                                    diameter_perc = round(diameter_mm / patient_img.shape[2], 4)
                                     nodule_chance = round(nodule_chance, 4)
                                     #helpers.save_cube_img(dst_dir + "Positive_nodule_" + str(nodule_chance) +  patient_id + "__" + str(annotation_index) + "__" + str(
                                      #       iteration) + ".png", cube_img, 4, 8)
-                                    patient_predictions_csv_line = [annotation_index, p_x_perc, p_y_perc, p_z_perc, diameter_perc, nodule_chance, diameter_mm]
+                                    patient_predictions_csv_line = [annotation_index, p_x_perc, p_y_perc, p_z_perc, nodule_chance]
                                     patient_predictions_csv.append(patient_predictions_csv_line)
                                     all_predictions_csv.append([patient_id] + patient_predictions_csv_line)
                                     annotation_index += 1
@@ -344,7 +320,7 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, luna16=False, 
                         print("Done: ", done_count, " skipped:", skipped_count)
                     iteration = iteration + 1
 
-        df = pandas.DataFrame(patient_predictions_csv, columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "nodule_chance", "diameter_mm"])
+        df = pandas.DataFrame(patient_predictions_csv, columns=["anno_index", "coord_x", "coord_y", "coord_z", "nodule_chance"])
         filter_patient_nodules_predictions(df, patient_id, CROP_SIZE * magnification)
         df.to_csv(csv_target_path, index=False)
 
@@ -358,26 +334,26 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, luna16=False, 
         #
         # df_features.to_csv(csv_target_path_features, index=False)
 
-        # df = pandas.DataFrame(all_predictions_csv, columns=["patient_id", "anno_index", "coord_x", "coord_y", "coord_z", "diameter", "nodule_chance", "diameter_mm"])
-        # df.to_csv("c:/tmp/tmp2.csv", index=False)
+        df = pandas.DataFrame(all_predictions_csv, columns=["patient_id", "anno_index", "coord_x", "coord_y", "coord_z", "nodule_chance"])
+        df.to_csv(settings.LIDC_PREDICTION_DIR + "Holdout_test.csv", index=False)
 
         print(predict_volume.mean())
         print("Done in : ", sw.get_elapsed_seconds(), " seconds")
 def evaluate_model(model_path, test_persentage):
     batch_size = 16
-    _, test_files = step2_train_nodule_detector.get_train_holdout_files(train_percentage=(100-test_persentage), ndsb3_holdout=0,
+    _, test_files = Train.get_train_holdout_files(train_percentage=(100-test_persentage), ndsb3_holdout=0,
                                                          manual_labels=False, full_luna_set=False,
                                                          fold_count=-1)
     print(test_files.shapes)
 
     # train_files = train_files[:100]
     # holdout_files = train_files[:10]
-    test_gen = step2_train_nodule_detector.data_generator(batch_size, test_files, False)
+    test_gen = Train.data_generator(batch_size, test_files, False)
 
 if __name__ == "__main__":
 
     CONTINUE_JOB = True
-    only_patient_id = '0030a160d58723ff36d73f41b170ec21'  # "ebd601d40a18634b100c92e7db39f585"
+    only_patient_id = None
 
     if not CONTINUE_JOB or only_patient_id is not None:
         for file_path in glob.glob("c:/tmp/*.*"):
@@ -395,14 +371,3 @@ if __name__ == "__main__":
         for magnification in [1, 1.5, 2]:  #
             predict_cubes("models/model_luna16_full__fs_best.hd5", CONTINUE_JOB, only_patient_id=only_patient_id, magnification=magnification, flip=False, train_data=True, holdout_no=None, ext_name="luna16_fs")
             predict_cubes("models/model_luna16_full__fs_best.hd5", CONTINUE_JOB, only_patient_id=only_patient_id, magnification=magnification, flip=False, train_data=False, holdout_no=None, ext_name="luna16_fs")
-
-    if False:
-        for version in [2, 1]:
-            for holdout in [0, 1]:
-                for magnification in [1, 1.5, 2]:  #
-                    predict_cubes("models/model_luna_posnegndsb_v" + str(version) + "__fs_h" + str(holdout) + "_end.hd5", CONTINUE_JOB, only_patient_id=only_patient_id, magnification=magnification, flip=False, train_data=True, holdout_no=holdout, ext_name="luna_posnegndsb_v" + str(version), fold_count=2)
-                    if holdout == 0:
-                        predict_cubes("models/model_luna_posnegndsb_v" + str(version) + "__fs_h" + str(holdout) + "_end.hd5", CONTINUE_JOB, only_patient_id=only_patient_id, magnification=magnification, flip=False, train_data=False, holdout_no=holdout, ext_name="luna_posnegndsb_v" + str(version), fold_count=2)
-
-    if False:
-        evaluate_model("models/model_luna16_full__fs_best.hd5",20)
