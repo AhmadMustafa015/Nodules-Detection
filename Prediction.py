@@ -76,6 +76,7 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
         patient_ids.append(parts[0])
 
     all_predictions_csv = []
+    all_metric = []
     for patient_index, patient_id in enumerate(reversed(patient_ids)):
         # AM: TODO find the mean of metadata
         if "metadata" in patient_id:
@@ -85,8 +86,9 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
         # TODO: real use of holdout
 
         print(patient_index, ": ", patient_id)
-        if lidc and only_patient_id is None:
-            csv_label_path = settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_annos_neg_lidc.csv"
+        if lidc and evaluate:
+            csv_label_path = settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_annos_pos_lidc.csv"
+            #csv_label_path = "F:/Cengiz/Nodules-Detection/" + patient_id + "_annos_pos_lidc.csv"
             csv_gt_label = pandas.read_csv(csv_label_path)
             gt_x = list(csv_gt_label["coord_x"].values.tolist())
             gt_y = list(csv_gt_label["coord_y"].values.tolist())
@@ -134,6 +136,19 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
         cube_img = None
         annotation_index = 0
         iteration = 0
+        if evaluate:
+            unique_nodules = []
+            for tx, ty, tz in zip(gt_x, gt_y, gt_z):
+                exist = False
+                if len(unique_nodules) == 0:
+                    exist = True
+                    unique_nodules.append([tx,ty,tz])
+                for index in range(len(unique_nodules)):
+                    if abs(tx - unique_nodules[index][0]) < 0.08 and abs(ty - unique_nodules[index][1]) < 0.08 and abs(
+                            tz - unique_nodules[index][2]) < 0.08:
+                        exist = True
+                if not exist:
+                    unique_nodules.append([tx, ty, tz])
         for z in range(0, predict_volume_shape[0]):
             for y in range(0, predict_volume_shape[1]):
                 for x in range(0, predict_volume_shape[2]):
@@ -201,7 +216,7 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                                     # diameter_perc = round(2 * step / patient_img.shape[2], 4)
                                     status = ""
                                     if evaluate:
-                                        for tx,ty,tz in gt_x,gt_y,gt_z:
+                                        for tx,ty,tz in zip(gt_x,gt_y,gt_z):
                                             dx = abs(p_x_perc - tx)
                                             dy = abs(p_y_perc - ty)
                                             dz = abs(p_z_perc - tz)
@@ -216,23 +231,49 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                                     patient_predictions_csv.append(patient_predictions_csv_line)
                                     all_predictions_csv.append([patient_id] + patient_predictions_csv_line)
                                     annotation_index += 1
-
+                            batch_list = []
+                            batch_list_coords = []
                     done_count += 1
                     if done_count % 10000 == 0:
                         print("Done: ", done_count, " skipped:", skipped_count)
                     iteration = iteration + 1
-
-        df = pandas.DataFrame(patient_predictions_csv, columns=["anno_index", "coord_x", "coord_y", "coord_z", "nodule_chance"])
+        if evaluate:
+            TP = numpy.sum(patient_predictions_csv_line[:][5] == "TP")
+            FP = numpy.sum(patient_predictions_csv_line[:][5] == "FP")
+            FN = len(unique_nodules) - TP
+            TN = done_count - FP
+            if TP != 0:
+                sensitivity = TP / (TP + FN)
+            else:
+                sensitivity = -1
+            print("Sensetivity: ",sensitivity)
+            if TN != 0:
+                specificity = TN / (TN + FP)
+            else:
+                specificity = -1
+            print("Specificity: ",specificity)
+            all_metric.append([patient_id,FP,FN,sensitivity,specificity])
+        df = pandas.DataFrame(patient_predictions_csv, columns=["anno_index", "coord_x", "coord_y", "coord_z", "nodule_chance","status"])
         df.to_csv(csv_target_path, index=False)
         print(predict_volume.mean())
         print("Done in : ", sw.get_elapsed_seconds(), " seconds")
-    df = pandas.DataFrame(all_predictions_csv, columns=["patient_id", "anno_index", "coord_x", "coord_y", "coord_z", "nodule_chance"])
-    df.to_csv(settings.LIDC_PREDICTION_DIR + "Holdout_test.csv", index=False)
+    df = pandas.DataFrame(all_predictions_csv,
+                          columns=["patient_id", "anno_index", "coord_x", "coord_y", "coord_z", "nodule_chance",
+                                   "status"])
+    df.to_csv(settings.LIDC_PREDICTION_DIR + "Detected_Nodules_All_Test_Candidates.csv.csv", index=False)
+    if evaluate:
+        total_FP = numpy.mean(all_metric[:][1])
+        total_FN = numpy.mean(all_metric[:][2])
+        total_sens = numpy.mean(all_metric[:][3])
+        total_spec = numpy.mean(all_metric[:][4])
+        all_metric.append(["Total Mean Value",total_FP,total_FN,total_sens,total_spec])
+        df = pandas.DataFrame(all_metric,columns=["patient_id", "false_positive", "false_negative", "sensitivity", "specificity"])
+        df.to_csv(settings.LIDC_PREDICTION_DIR + "Metric_All_Test_Candidates.csv", index=False)
 
 
 if __name__ == "__main__":
 
-    CONTINUE_JOB = True
+    CONTINUE_JOB = False
     only_patient_id = "1.3.6.1.4.1.14519.5.2.1.6279.6001.330643702676971528301859647742"
 
     if not CONTINUE_JOB or only_patient_id is not None:
