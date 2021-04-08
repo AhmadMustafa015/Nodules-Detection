@@ -74,6 +74,8 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
             if parts[0] in patient_ids:
                 continue
             patient_ids.append(parts[0])
+            print("Test Case ID: ", parts[0])
+        print("start evaluation on: ", len(patient_ids), " Patient")
     else:
         patient_ids = only_patient_id
 
@@ -89,8 +91,8 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
 
         print(patient_index, ": ", patient_id)
         if lidc and evaluate:
-            #csv_label_path = settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_annos_pos_lidc.csv"
-            csv_label_path = "F:/Cengiz/Nodules-Detection/" + patient_id + "_annos_pos_lidc.csv"
+            csv_label_path = settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_annos_pos_lidc.csv"
+            #csv_label_path = "F:/Cengiz/Nodules-Detection/" + patient_id + "_annos_pos_lidc.csv"
             csv_gt_label = pandas.read_csv(csv_label_path)
             gt_x = list(csv_gt_label["coord_x"].values.tolist())
             gt_y = list(csv_gt_label["coord_y"].values.tolist())
@@ -303,8 +305,8 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
 
 if __name__ == "__main__":
 
-    CONTINUE_JOB = False
-    only_patient_id = "1.3.6.1.4.1.14519.5.2.1.6279.6001.330643702676971528301859647742"
+    CONTINUE_JOB = True
+    only_patient_id = None
 
     if not CONTINUE_JOB or only_patient_id is not None:
         for file_path in glob.glob("c:/tmp/*.*"):
