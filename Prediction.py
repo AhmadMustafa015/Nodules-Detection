@@ -64,16 +64,18 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
     #model = Train.get_net(input_shape=(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE, 1), load_weight_path=model_path)
     model = tf.keras.models.load_model(model_path)
     patient_ids = []
-
-    cubic_images = pandas.read_csv(settings.BASE_DIR_SSD + "Test_data.csv", sep=',').values.tolist()
-    model.summary()
-    random.shuffle(cubic_images)
-    for row in cubic_images:
-        root_dir = os.path.basename(row[0])
-        parts = root_dir.split("_")
-        if parts[0] in patient_ids:
-            continue
-        patient_ids.append(parts[0])
+    if evaluate:
+        cubic_images = pandas.read_csv(settings.BASE_DIR_SSD + "Test_data.csv", sep=',').values.tolist()
+        model.summary()
+        random.shuffle(cubic_images)
+        for row in cubic_images:
+            root_dir = os.path.basename(row[0])
+            parts = root_dir.split("_")
+            if parts[0] in patient_ids:
+                continue
+            patient_ids.append(parts[0])
+    else:
+        patient_ids = only_patient_id
 
     all_predictions_csv = []
     all_metric = []
@@ -87,8 +89,8 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
 
         print(patient_index, ": ", patient_id)
         if lidc and evaluate:
-            csv_label_path = settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_annos_pos_lidc.csv"
-            #csv_label_path = "F:/Cengiz/Nodules-Detection/" + patient_id + "_annos_pos_lidc.csv"
+            #csv_label_path = settings.LIDC_EXTRACTED_IMAGE_DIR + "_labels/" + patient_id + "_annos_pos_lidc.csv"
+            csv_label_path = "F:/Cengiz/Nodules-Detection/" + patient_id + "_annos_pos_lidc.csv"
             csv_gt_label = pandas.read_csv(csv_label_path)
             gt_x = list(csv_gt_label["coord_x"].values.tolist())
             gt_y = list(csv_gt_label["coord_y"].values.tolist())
@@ -216,14 +218,14 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                                     # diameter_perc = round(2 * step / patient_img.shape[2], 4)
                                     status = ""
                                     if evaluate:
+                                        status = "FP"
                                         for tx,ty,tz in zip(gt_x,gt_y,gt_z):
                                             dx = abs(p_x_perc - tx)
                                             dy = abs(p_y_perc - ty)
                                             dz = abs(p_z_perc - tz)
                                             if dx < 0.07 and dy < 0.07 and dz < 0.07:
                                                 status = "TP"
-                                            else:
-                                                status = "FP"
+                                                break
                                     nodule_chance = round(nodule_chance, 4)
                                     #helpers.save_cube_img(dst_dir + "Positive_nodule_" + str(nodule_chance) +  patient_id + "__" + str(annotation_index) + "__" + str(
                                      #       iteration) + ".png", cube_img, 4, 8)
@@ -238,8 +240,26 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                         print("Done: ", done_count, " skipped:", skipped_count)
                     iteration = iteration + 1
         if evaluate:
-            TP = numpy.sum(patient_predictions_csv_line[:][5] == "TP")
-            FP = numpy.sum(patient_predictions_csv_line[:][5] == "FP")
+            TP = FP = 0
+            unique_nodules = []
+            for row in patient_predictions_csv:
+                exist = False
+                tx = row[1]
+                ty = row[2]
+                tz = row[3]
+                if len(unique_nodules) == 0:
+                    exist = True
+                    unique_nodules.append([tx, ty, tz])
+                for index in range(len(unique_nodules)):
+                    if abs(tx - unique_nodules[index][0]) < 0.08 and abs(
+                            ty - unique_nodules[index][1]) < 0.08 and abs(
+                            tz - unique_nodules[index][2]) < 0.08:
+                        exist = True
+                if not exist:
+                    unique_nodules.append([tx, ty, tz])
+                    TP += 1 if row[5] == "TP" else 0
+                    FP += 1 if row[5] == "FP" else 0
+
             FN = len(unique_nodules) - TP
             TN = done_count - FP
             if TP != 0:
@@ -262,10 +282,20 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                                    "status"])
     df.to_csv(settings.LIDC_PREDICTION_DIR + "Detected_Nodules_All_Test_Candidates.csv.csv", index=False)
     if evaluate:
-        total_FP = numpy.mean(all_metric[:][1])
-        total_FN = numpy.mean(all_metric[:][2])
-        total_sens = numpy.mean(all_metric[:][3])
-        total_spec = numpy.mean(all_metric[:][4])
+        total_FP = total_FN = total_sens = total_spec =0
+        for row in all_metric:
+            total_FP += row[1]
+            total_FN += row[2]
+            total_sens += row[3]
+            total_spec += row[4]
+        total_FP /= len(all_metric)
+        total_FN /= len(all_metric)
+        total_sens /= len(all_metric)
+        total_spec /= len(all_metric)
+        print("Total FP: ", total_FP)
+        print("Total FN: ", total_FN)
+        print("Total Sensetivity: ", total_sens)
+        print("Total Specificity: ", total_spec)
         all_metric.append(["Total Mean Value",total_FP,total_FN,total_sens,total_spec])
         df = pandas.DataFrame(all_metric,columns=["patient_id", "false_positive", "false_negative", "sensitivity", "specificity"])
         df.to_csv(settings.LIDC_PREDICTION_DIR + "Metric_All_Test_Candidates.csv", index=False)
