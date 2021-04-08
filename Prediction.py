@@ -241,22 +241,22 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                     iteration = iteration + 1
         if evaluate:
             TP = FP = 0
-            unique_nodules = []
+            unique_nodules_2 = []
             for row in patient_predictions_csv:
                 exist = False
                 tx = row[1]
                 ty = row[2]
                 tz = row[3]
-                if len(unique_nodules) == 0:
+                if len(unique_nodules_2) == 0:
                     exist = True
-                    unique_nodules.append([tx, ty, tz])
-                for index in range(len(unique_nodules)):
-                    if abs(tx - unique_nodules[index][0]) < 0.08 and abs(
-                            ty - unique_nodules[index][1]) < 0.08 and abs(
-                            tz - unique_nodules[index][2]) < 0.08:
+                    unique_nodules_2.append([tx, ty, tz])
+                for index in range(len(unique_nodules_2)):
+                    if abs(tx - unique_nodules_2[index][0]) < 0.08 and abs(
+                            ty - unique_nodules_2[index][1]) < 0.08 and abs(
+                            tz - unique_nodules_2[index][2]) < 0.08:
                         exist = True
                 if not exist:
-                    unique_nodules.append([tx, ty, tz])
+                    unique_nodules_2.append([tx, ty, tz])
                     TP += 1 if row[5] == "TP" else 0
                     FP += 1 if row[5] == "FP" else 0
 
