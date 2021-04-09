@@ -253,9 +253,9 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                     exist = True
                     unique_nodules_2.append([tx, ty, tz])
                 for index in range(len(unique_nodules_2)):
-                    if abs(tx - unique_nodules_2[index][0]) < 0.08 and abs(
-                            ty - unique_nodules_2[index][1]) < 0.08 and abs(
-                            tz - unique_nodules_2[index][2]) < 0.08:
+                    if abs(tx - unique_nodules_2[index][0]) < 0.1 and abs(
+                            ty - unique_nodules_2[index][1]) < 0.1 and abs(
+                            tz - unique_nodules_2[index][2]) < 0.1:
                         exist = True
                 if not exist:
                     unique_nodules_2.append([tx, ty, tz])
@@ -267,14 +267,14 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
             if TP != 0:
                 sensitivity = TP / (TP + FN)
             else:
-                sensitivity = -1
+                sensitivity = 0
             print("Sensetivity: ",sensitivity)
             if TN != 0:
                 specificity = TN / (TN + FP)
             else:
-                specificity = -1
+                specificity = 0
             print("Specificity: ",specificity)
-            all_metric.append([patient_id,FP,FN,sensitivity,specificity])
+            all_metric.append([patient_id,FP,FN,TP,TN,sensitivity,specificity])
         df = pandas.DataFrame(patient_predictions_csv, columns=["anno_index", "coord_x", "coord_y", "coord_z", "nodule_chance","status"])
         df.to_csv(csv_target_path, index=False)
         print(predict_volume.mean())
@@ -284,28 +284,32 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                                    "status"])
     df.to_csv(settings.LIDC_PREDICTION_DIR + "Detected_Nodules_All_Test_Candidates.csv.csv", index=False)
     if evaluate:
-        total_FP = total_FN = total_sens = total_spec =0
+        total_FP = total_FN =total_TP = total_TN = total_sens = total_spec =0
         for row in all_metric:
             total_FP += row[1]
             total_FN += row[2]
-            total_sens += row[3]
-            total_spec += row[4]
+            total_TP += row[3]
+            total_TN += row[4]
+            total_sens += row[5]
+            total_spec += row[6]
         total_FP /= len(all_metric)
         total_FN /= len(all_metric)
+        total_TP /= len(all_metric)
+        total_TN /= len(all_metric)
         total_sens /= len(all_metric)
         total_spec /= len(all_metric)
         print("Total FP: ", total_FP)
         print("Total FN: ", total_FN)
         print("Total Sensetivity: ", total_sens)
         print("Total Specificity: ", total_spec)
-        all_metric.append(["Total Mean Value",total_FP,total_FN,total_sens,total_spec])
-        df = pandas.DataFrame(all_metric,columns=["patient_id", "false_positive", "false_negative", "sensitivity", "specificity"])
+        all_metric.append(["Total Mean Value",total_FP,total_FN,total_TP,total_TN,total_sens,total_spec])
+        df = pandas.DataFrame(all_metric,columns=["patient_id", "false_positive", "false_negative","true_positive", "true_negative", "sensitivity", "specificity"])
         df.to_csv(settings.LIDC_PREDICTION_DIR + "Metric_All_Test_Candidates.csv", index=False)
 
 
 if __name__ == "__main__":
 
-    CONTINUE_JOB = True
+    CONTINUE_JOB = False
     only_patient_id = None
 
     if not CONTINUE_JOB or only_patient_id is not None:
