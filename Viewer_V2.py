@@ -58,8 +58,8 @@ class CanvasImage:
         placeholder.config(menu=option_menu)
         file_menu = Menu(option_menu)
         option_menu.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="Open Scan",command=self.open_file()) #To_open_file
-        file_menu.add_command(label="Open Label", command=self.open_label())  # To_open_file
+        file_menu.add_command(label="Open Scan",command=self.open_file) #To_open_file
+        file_menu.add_command(label="Open Label", command=self.open_label)  # To_open_file
         file_menu.add_command(label="Exit", command=placeholder.quit)
 
         hbar.grid(row=1, column=0, sticky='we')
@@ -67,16 +67,16 @@ class CanvasImage:
         # Create canvas and bind it with scrollbars. Public for outer classes
         self.canvas = tk.Canvas(self.__imframe, highlightthickness=0,
                                 xscrollcommand=hbar.set, yscrollcommand=vbar.set)
-        self.canvas.grid(row=0, column=0, sticky='nswe', columnspan=2)
+        self.canvas.grid(row=0, column=0, sticky='nswe', columnspan=13)
         self.canvas.update()  # wait till canvas is created
 
         # e=tk.Button(self.__imframe,text="Zoom in",command=self.Zoom,height=3,width=10)
         # e.grid(row=2, column=0)
         f = tk.Button(self.__imframe, text="Zoom out", command=self.Zoom2, height=3, width=10)
-        f.grid(row=2, column=0)
+        f.grid(row=0, column=1)
 
-        f = tk.Label(self.__imframe, text="Tounch to zoom in", fg="blue", font=26)
-        f.grid(row=3, column=0)
+        #f = tk.Label(self.__imframe, text="Tounch to zoom in", fg="blue", font=26)
+        #f.grid(row=3, column=0)
 
         hbar.configure(command=self.__scroll_x)  # bind scrollbars to the canvas
         vbar.configure(command=self.__scroll_y)
@@ -303,6 +303,7 @@ class CanvasImage:
         """ Exception: cannot use place with this widget """
         raise Exception('Cannot use place with the widget ' + self.__class__.__name__)
     def open_file(self):
+        #self.app.filename = filedialog.askopenfilename()
         self.app.directory = filedialog.askdirectory()
         self.folder = self.app.directory
         print(self.folder)
@@ -378,6 +379,8 @@ class CanvasImage:
                                       columns=["nodule_id", "coord_x", "coord_y", "coord_z", "diameter_x", "diameter_y",
                                                "patient_id"])
                 df.to_csv("viewer/" +str(row[6]) +"_excluded_annotation_viewer.csv", index=False)
+                df.to_csv(self.folder +str(row[6]) +"_excluded_annotation_viewer.csv", index=False)
+
         #cv2.imwrite(img_path, org_img * 255)
     def remove_ann(self, event):
         print('hide me')
@@ -678,7 +681,7 @@ class MainWindow(ttk.Frame):
         # print(w.get())
 
 
-filename = 'F:/Cengiz/Lung Nodules Detection/Nodule Detection Project 2020/output/luna16_extracted_images/1.3.6.1.4.1.14519.5.2.1.6279.6001.100332161840553388986847034053/img_0156_i.png'  # place path to your image here
+filename = 'lidc_extracted_images/1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860/img_0156_i.png'  # place path to your image here
 # filename = 'd:/Data/yandex_z18_1-1.tif'  # huge TIFF file 1.4 GB
 # filename = 'd:/Data/The_Garden_of_Earthly_Delights_by_Bosch_High_Resolution.jpg'
 # filename = 'd:/Data/The_Garden_of_Earthly_Delights_by_Bosch_High_Resolution.tif'
