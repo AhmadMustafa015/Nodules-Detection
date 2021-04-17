@@ -11,6 +11,7 @@ import SimpleITK
 import helpers
 import numpy
 from bs4 import BeautifulSoup
+import pandas
 class AutoScrollbar(ttk.Scrollbar):
     """ A scrollbar that hides itself if it's not needed. Works only for grid geometry manager """
 
@@ -36,10 +37,12 @@ class CanvasImage:
         # a=open("x1.txt","r")
         # data=a.readlines()
         self.image_dirs = []
+        self.removed_nodule_list = []
         self.folder = ""
         self.current_slice = 0
         self.imscale = 1.0
         self.app = placeholder
+        self.annotations = []
         # self.imscale = 1+(1*int(data[0])/100)  # scale for the canvas image zoom, public for outer classes
         self.__delta = 1.3  # zoom magnitude
         self.__filter = Image.ANTIALIAS  # could be: NEAREST, BILINEAR, BICUBIC and ANTIALIAS
@@ -55,8 +58,8 @@ class CanvasImage:
         placeholder.config(menu=option_menu)
         file_menu = Menu(option_menu)
         option_menu.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="Open Scan",command=self.open_file) #To_open_file
-        file_menu.add_command(label="Open Label", command=self.open_label)  # To_open_file
+        file_menu.add_command(label="Open Scan",command=self.open_file()) #To_open_file
+        file_menu.add_command(label="Open Label", command=self.open_label())  # To_open_file
         file_menu.add_command(label="Exit", command=placeholder.quit)
 
         hbar.grid(row=1, column=0, sticky='we')
@@ -85,6 +88,7 @@ class CanvasImage:
         self.canvas.bind('<MouseWheel>', self.__wheel)  # zoom for Windows and MacOS, but not Linux
         self.canvas.bind('<Button-5>', self.__wheel)  # zoom for Linux, wheel scroll down
         self.canvas.bind('<Button-4>', self.__wheel)  # zoom for Linux, wheel scroll up
+        self.canvas.bind('<Control-r>', self.exclude_annotation)  # zoom for Linux, wheel scroll up
 
         self.canvas.bind('<Button-1>', self.Zoom)  # zoom for Linux, wheel scroll up
 
@@ -213,7 +217,7 @@ class CanvasImage:
                 z_center /= spacing[2]
 
 
-                line = [nodule_id, x_center, y_center, z_center, x_diameter, y_diameter]
+                line = [nodule_id, x_center, y_center, z_center, x_diameter, y_diameter,patient_id]
                 pos_lines.append(line)
 
 
@@ -242,6 +246,7 @@ class CanvasImage:
                 # else:
                 #     print("Too few overlaps")
             pos_lines = filtered_lines
+        self.annotations = pos_lines
         return pos_lines
 
     def smaller(self):
@@ -330,7 +335,68 @@ class CanvasImage:
         """ Scroll canvas vertically and redraw the image """
         self.canvas.yview(*args)  # scroll vertically
         self.__show_image()  # redraw the image
+    def exclude_annotation(self,event):
+        img_path = "C:/tmp/" + "img_" + str(self.current_slice).rjust(4, '0') + "_i.png"
+        org_img = cv2.imread(img_path)
+        exclude_list = []
+        for row in self.annotations:
+            slice_num = int(round(row[3]))
+            if slice_num == self.current_slice:
+                exclude_list.append(row)
+        for row in exclude_list:
+            if row[4] > 0:
+                xymax = (int(row[1] + row[4] / 2 + 1), int(row[2] + row[5] / 2 + 1))
+                xymin = (int(row[1] - row[4] / 2 + 1), int(row[2] - row[5] / 2 + 1))
+                colorRGB = (0, 255, 0)
+            else:
+                xymax = (int(row[1] + 3 + 1), int(row[2] + 3 + 1))
+                xymin = (int(row[1] - 3 + 1), int(row[2] - 3 + 1))
+                colorRGB = (0, 255, 0)
+            org_img = cv2.rectangle(org_img, xymin, xymax, colorRGB, 1)
+            cv2.imwrite("C:/tmp/" + "img_" + str(self.current_slice).rjust(4, '0') + "tmp_i.png", org_img)
+            self.path = "C:/tmp/" + "img_" + str(self.current_slice).rjust(4, '0') + "tmp_i.png"
+            self.refresh_image()
+            self.removeS = 0
+            self.canvas.bind('<r>', self.remove_ann)
+            #self.canvas.bind('<Return>', self.remove_ann)
+            var = tk.IntVar()
+            button = tk.Button(self.app, text="Next", command=lambda: var.set(1))
+            button.place(relx=.3, rely=.3, anchor="c")
 
+            print("waiting...")
+            button.wait_variable(var)
+            print("done waiting.")
+            if self.removeS == 1:
+                print("Remove a Nodule with ID: ", row[0])
+                self.removed_nodule_list.append(row)
+                colorRGB = (255, 0, 0)
+                org_img = cv2.rectangle(org_img, xymin, xymax, colorRGB, 1)
+                cv2.imwrite("C:/tmp/" + "img_" + str(self.current_slice).rjust(4, '0') + "tmp_i.png", org_img)
+                self.path = "C:/tmp/" + "img_" + str(self.current_slice).rjust(4, '0') + "tmp_i.png"
+                self.refresh_image()
+                df = pandas.DataFrame(self.removed_nodule_list,
+                                      columns=["nodule_id", "coord_x", "coord_y", "coord_z", "diameter_x", "diameter_y",
+                                               "patient_id"])
+                df.to_csv("viewer/" +str(row[6]) +"_excluded_annotation_viewer.csv", index=False)
+        #cv2.imwrite(img_path, org_img * 255)
+    def remove_ann(self, event):
+        print('hide me')
+        self.removeS = 1
+    def refresh_image(self):
+        self.__image.close()
+        self.__image = Image.open(self.path)  # reopen / reset image
+        # self.imwidth, self.imheight = self.__image.size
+        # self.container = self.canvas.create_rectangle((0, 0, self.imwidth, self.imheight), width=0)
+        self.__pyramid = [self.smaller()] if self.__huge else [Image.open(self.path)]
+        # Take appropriate image from the pyramid
+        k = self.imscale * self.__ratio  # temporary coefficient
+        self.__curr_img = min((-1) * int(math.log(k, self.__reduction)), len(self.__pyramid) - 1)
+        self.__scale = k * math.pow(self.__reduction, max(0, self.__curr_img))
+        #
+        # self.canvas.scale('all', x, y, scale, scale)  # rescale all objects
+        # Redraw some figures before showing image on the screen
+        self.redraw_figures()  # method for child classes
+        self.__show_image()
     def __show_image(self):
         """ Show image on the Canvas. Implements correct image zoom almost like in Google Maps """
         box_image = self.canvas.coords(self.container)  # get image area
@@ -452,6 +518,7 @@ class CanvasImage:
             if not label_image:
                 cv2.imwrite(img_path, org_img * 255)
             else:
+                org_img = cv2.cvtColor(org_img.astype('float32'), cv2.COLOR_GRAY2BGR)
                 for row in label_list:
                     slice_num = int(round(row[3]))
                     if slice_num == i:
@@ -463,9 +530,8 @@ class CanvasImage:
                             xymax = (int(row[1] + 3), int(row[2] + 3))
                             xymin = (int(row[1] - 3), int(row[2] - 3))
                             colorRGB = (0, 0, 255)
-                        gray_BGR = cv2.cvtColor(org_img.astype('float32'), cv2.COLOR_GRAY2BGR)
-                        org_img = cv2.rectangle(gray_BGR, xymin, xymax, colorRGB, 1)
-                        break
+                        org_img = cv2.rectangle(org_img, xymin, xymax, colorRGB, 1)
+                        #break
                 cv2.imwrite(img_path, org_img * 255)
     def Zoom(self, event):
         # print("hll")
@@ -592,10 +658,6 @@ class MainWindow(ttk.Frame):
         ttk.Frame.__init__(self, master=mainframe)
         self.master.title('Dicom Viewer Ahmad & Can viewer version 0.2')
         # self.master.geometry('800x450+100+10')  # size of the main window
-        image = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-        height = image.shape[0]
-        width = image.shape[1]
-        print(width, height)
         self.master.geometry('920x600')  # size of the main window
         self.master.rowconfigure(0, weight=10)  # make the CanvasImage widget expandable
         self.master.columnconfigure(0, weight=10)
@@ -634,6 +696,8 @@ filename = 'F:/Cengiz/Lung Nodules Detection/Nodule Detection Project 2020/outpu
 #   app = MainWindow(tk.Tk(), path="/home/pi/Andromeda_application/tmp2/amount.png")
 
 # else:
+if not os.path.exists("viewer/"):
+        os.mkdir("viewer/")
 app = MainWindow(tk.Tk(), path=filename)
 
 app.mainloop()
