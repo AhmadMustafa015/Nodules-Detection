@@ -347,11 +347,11 @@ class CanvasImage:
         for row in exclude_list:
             if row[4] > 0:
                 xymax = (int(row[1] + row[4] / 2 + 1), int(row[2] + row[5] / 2 + 1))
-                xymin = (int(row[1] - row[4] / 2 + 1), int(row[2] - row[5] / 2 + 1))
+                xymin = (int(row[1] - row[4] / 2 - 1), int(row[2] - row[5] / 2 - 1))
                 colorRGB = (0, 255, 0)
             else:
                 xymax = (int(row[1] + 3 + 1), int(row[2] + 3 + 1))
-                xymin = (int(row[1] - 3 + 1), int(row[2] - 3 + 1))
+                xymin = (int(row[1] - 3 - 1), int(row[2] - 3 - 1))
                 colorRGB = (0, 255, 0)
             org_img = cv2.rectangle(org_img, xymin, xymax, colorRGB, 1)
             cv2.imwrite("C:/tmp/" + "img_" + str(self.current_slice).rjust(4, '0') + "tmp_i.png", org_img)
@@ -379,7 +379,7 @@ class CanvasImage:
                                       columns=["nodule_id", "coord_x", "coord_y", "coord_z", "diameter_x", "diameter_y",
                                                "patient_id"])
                 df.to_csv("viewer/" +str(row[6]) +"_excluded_annotation_viewer.csv", index=False)
-                df.to_csv(self.folder +str(row[6]) +"_excluded_annotation_viewer.csv", index=False)
+                df.to_csv(self.folder+ "/" +"excluded_annotation_viewer.csv", index=False)
 
         #cv2.imwrite(img_path, org_img * 255)
     def remove_ann(self, event):
