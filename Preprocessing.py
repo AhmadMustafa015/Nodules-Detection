@@ -269,7 +269,8 @@ def extract_dicom_images_patient(src_dir):
 
     slices = load_patient(src_dir)
     if only_slice_thik == True:
-        slices_thick_info.append([patient_id,slices[0].SliceThickness])
+        thik_slice = [patient_id, slices[0].SliceThickness]
+        slices_thick_info.append(thik_slice)
         print(patient_id,"\t",slices[0].SliceThickness)
         return
     print(len(slices), "\t", slices[0].SliceThickness, "\t", slices[0].PixelSpacing)
