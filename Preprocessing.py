@@ -14,10 +14,10 @@ import os
 import glob
 import scipy.misc
 import pydicom as dicom  # pip install pydicom
-
+only_slice_thik = True
 random.seed(1321)
 numpy.random.seed(1321)
-
+slices_thick_info = []
 ## From LIDC dataset find the patient with given ID and return the path for directory
 def find_dcm_file(patient_id):
     # for subject_no in range(settings.LUNA_SUBSET_START_INDEX, 10):
@@ -258,16 +258,20 @@ def extract_dicom_images_patient(src_dir):
     # for root, dirs, files in os.walk(src_dir):
     #    if len(files) > 10:
     #        dir_path = root
-    print("Dir_Path: ", src_dir)
+    #print("Dir_Path: ", src_dir)
     patient_id = os.path.basename(src_dir)
     search_dirs = os.listdir(settings.LIDC_EXTRACTED_IMAGE_DIR)
     scan_path = settings.LIDC_EXTRACTED_IMAGE_DIR + patient_id + "/img_0033_i.png"
-    if os.path.exists(scan_path):
-        return
+    #if os.path.exists(scan_path):
+    #    return
     # if patient_id in search_dirs:
     #    return
 
     slices = load_patient(src_dir)
+    if only_slice_thik == True:
+        slices_thick_info.append([patient_id,slices[0].SliceThickness])
+        print(patient_id,"\t",slices[0].SliceThickness)
+        return
     print(len(slices), "\t", slices[0].SliceThickness, "\t", slices[0].PixelSpacing)
     print("Orientation: ", slices[0].ImageOrientationPatient)
     # assert slices[0].ImageOrientationPatient == [1.000000, 0.000000, 0.000000, 0.000000, 1.000000, 0.000000]
@@ -753,8 +757,8 @@ def process_images(delete_existing=False, only_process_patient=None):
         #     continue
         src_p = os.path.split(src_p)[0]
         src_path.append(src_p)
-    print("Total nember of scans: ", len(src_path))
-    print(src_path)
+    #print("Total nember of scans: ", len(src_path))
+    #print(src_path)
     if only_process_patient is None:
         pool = Pool(settings.WORKER_POOL_SIZE)
         pool.map(extract_dicom_images_patient, src_path)
@@ -859,12 +863,15 @@ def process_lidc_annotations(only_patient=None, agreement_threshold=0):
 
 
 if __name__ == "__main__":
-    if False:
+    if True:
         print("step 1 Process images...")
         # only_process_patient = "1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860"
         process_images(delete_existing=False, only_process_patient=None)
+        if only_slice_thik == True:
+            df_annos = pandas.DataFrame(slices_thick_info,columns=["patient_id", "slice_thickness"])
+            df_annos.to_csv(settings.BASE_DIR + "slices_thickness.csv", index=False)
 
-    if True:
+    if False:
         print("step 2 Process LIDC annotation...")
         process_lidc_annotations(only_patient=None, agreement_threshold=0)
     if False:

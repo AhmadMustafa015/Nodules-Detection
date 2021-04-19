@@ -282,7 +282,7 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
     df = pandas.DataFrame(all_predictions_csv,
                           columns=["patient_id", "anno_index", "coord_x", "coord_y", "coord_z", "nodule_chance",
                                    "status"])
-    df.to_csv(settings.LIDC_PREDICTION_DIR + "Detected_Nodules_All_Test_Candidates.csv.csv", index=False)
+    df.to_csv(settings.LIDC_PREDICTION_DIR + "Detected_Nodules_All_Test_Candidates.csv", index=False)
     if evaluate:
         total_FP = total_FN =total_TP = total_TN = total_sens = total_spec =0
         for row in all_metric:
