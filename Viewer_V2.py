@@ -582,9 +582,9 @@ class CanvasImage:
         self.imscale *= self.__delta
         scale *= self.__delta
         print(self.imscale)
-        f = open("x1.txt", "w+")
-        f.writelines(str(self.imscale))
-        f.close()
+        #f = open("x1.txt", "w+")
+        #f.writelines(str(self.imscale))
+        #f.close()
 
         # if(self.imscale >=12):
         # self.canvas.unbind('<Button-1>')
