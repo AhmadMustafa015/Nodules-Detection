@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import *
 import os
 from tkinter import ttk
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw, ImageFont
 import cv2
 from tkinter import filedialog
 import SimpleITK
@@ -12,6 +12,11 @@ import helpers
 import numpy
 from bs4 import BeautifulSoup
 import pandas
+import glob
+import shutil
+import copy
+
+
 class AutoScrollbar(ttk.Scrollbar):
     """ A scrollbar that hides itself if it's not needed. Works only for grid geometry manager """
 
@@ -89,6 +94,7 @@ class CanvasImage:
         self.canvas.bind('<Button-5>', self.__wheel)  # zoom for Linux, wheel scroll down
         self.canvas.bind('<Button-4>', self.__wheel)  # zoom for Linux, wheel scroll up
         self.canvas.bind('<Control-r>', self.exclude_annotation)  # zoom for Linux, wheel scroll up
+        self.canvas.bind('<Control-R>', self.exclude_annotation)  # zoom for Linux, wheel scroll up
 
         self.canvas.bind('<Button-1>', self.Zoom)  # zoom for Linux, wheel scroll up
 
@@ -337,8 +343,8 @@ class CanvasImage:
         self.canvas.yview(*args)  # scroll vertically
         self.__show_image()  # redraw the image
     def exclude_annotation(self,event):
-        img_path = "C:/tmp/" + "img_" + str(self.current_slice).rjust(4, '0') + "_i.png"
-        org_img = cv2.imread(img_path)
+        img_path = "C:/tmp/original/" + "img_" + str(self.current_slice).rjust(4, '0') + "_i.png"
+        self.org_img = cv2.imread(img_path)
         exclude_list = []
         for row in self.annotations:
             slice_num = int(round(row[3]))
@@ -346,19 +352,21 @@ class CanvasImage:
                 exclude_list.append(row)
         for row in exclude_list:
             if row[4] > 0:
-                xymax = (int(row[1] + row[4] / 2 + 1), int(row[2] + row[5] / 2 + 1))
-                xymin = (int(row[1] - row[4] / 2 - 1), int(row[2] - row[5] / 2 - 1))
+                self.xymax = (int(row[1] + row[4] / 2 + 1), int(row[2] + row[5] / 2 + 1))
+                self.xymin = (int(row[1] - row[4] / 2 - 1), int(row[2] - row[5] / 2 - 1))
                 colorRGB = (0, 255, 0)
             else:
-                xymax = (int(row[1] + 3 + 1), int(row[2] + 3 + 1))
-                xymin = (int(row[1] - 3 - 1), int(row[2] - 3 - 1))
+                self.xymax = (int(row[1] + 3 + 1), int(row[2] + 3 + 1))
+                self.xymin = (int(row[1] - 3 - 1), int(row[2] - 3 - 1))
                 colorRGB = (0, 255, 0)
-            org_img = cv2.rectangle(org_img, xymin, xymax, colorRGB, 1)
-            cv2.imwrite("C:/tmp/" + "img_" + str(self.current_slice).rjust(4, '0') + "tmp_i.png", org_img)
+            tmp_image = copy.copy(self.org_img)
+            rect_img = cv2.rectangle(tmp_image, self.xymin, self.xymax, colorRGB, 1)
+            cv2.imwrite("C:/tmp/" + "img_" + str(self.current_slice).rjust(4, '0') + "tmp_i.png", rect_img)
             self.path = "C:/tmp/" + "img_" + str(self.current_slice).rjust(4, '0') + "tmp_i.png"
             self.refresh_image()
             self.removeS = 0
             self.canvas.bind('<r>', self.remove_ann)
+            self.canvas.bind('<R>', self.remove_ann)
             #self.canvas.bind('<Return>', self.remove_ann)
             var = tk.IntVar()
             button = tk.Button(self.app, text="Next", command=lambda: var.set(1))
@@ -370,21 +378,26 @@ class CanvasImage:
             if self.removeS == 1:
                 print("Remove a Nodule with ID: ", row[0])
                 self.removed_nodule_list.append(row)
-                colorRGB = (255, 0, 0)
-                org_img = cv2.rectangle(org_img, xymin, xymax, colorRGB, 1)
-                cv2.imwrite("C:/tmp/" + "img_" + str(self.current_slice).rjust(4, '0') + "tmp_i.png", org_img)
-                self.path = "C:/tmp/" + "img_" + str(self.current_slice).rjust(4, '0') + "tmp_i.png"
-                self.refresh_image()
+                #colorRGB = (255, 0, 0)
+                #org_img = cv2.rectangle(self.org_img, self.xymin, self.xymax, colorRGB, 1)
+                #cv2.imwrite("C:/tmp/" + "img_" + str(self.current_slice).rjust(4, '0') + "tmp_i.png", org_img)
+                #self.path = "C:/tmp/" + "img_" + str(self.current_slice).rjust(4, '0') + "tmp_i.png"
+                #self.refresh_image()
                 df = pandas.DataFrame(self.removed_nodule_list,
                                       columns=["nodule_id", "coord_x", "coord_y", "coord_z", "diameter_x", "diameter_y",
                                                "patient_id"])
                 df.to_csv("viewer/" +str(row[6]) +"_excluded_annotation_viewer.csv", index=False)
                 df.to_csv(self.folder+ "/" +"excluded_annotation_viewer.csv", index=False)
-
-        #cv2.imwrite(img_path, org_img * 255)
+        img_path = "C:/tmp/" + "img_" + str(self.current_slice).rjust(4, '0') + "_i.png"
+        cv2.imwrite(img_path, self.org_img)
     def remove_ann(self, event):
-        print('hide me')
         self.removeS = 1
+        colorRGB = (255, 0, 0)
+        self.org_img = cv2.rectangle(self.org_img, self.xymin, self.xymax, colorRGB, 1)
+        cv2.imwrite("C:/tmp/" + "img_" + str(self.current_slice).rjust(4, '0') + "_i.png", self.org_img)
+        self.path = "C:/tmp/" + "img_" + str(self.current_slice).rjust(4, '0') + "_i.png"
+        self.refresh_image()
+
     def refresh_image(self):
         self.__image.close()
         self.__image = Image.open(self.path)  # reopen / reset image
@@ -512,16 +525,27 @@ class CanvasImage:
         img_array = SimpleITK.GetArrayFromImage(itk_img)
         if not os.path.exists("C:/tmp/"):
             os.mkdir("C:/tmp/")
+        if not os.path.exists("C:/tmp/original/"):
+            os.mkdir("C:/tmp/original/")
+        self.image_dirs = []
+        for file_path in glob.glob("c:/tmp/*.*"):
+            if not os.path.isdir(file_path):
+                try:
+                    os.remove(file_path)
+                except:
+                    print("Can't remove file: ", file_path)
         for i in range(img_array.shape[0]):
-            img_path = "C:/tmp/" + "img_" + str(i).rjust(4, '0') + "_i.png"
-            self.image_dirs.append(img_path)
+            img_path = "C:/tmp/original/" + "img_" + str(i).rjust(4, '0') + "_i.png"
+            img_path1 = "C:/tmp/" + "img_" + str(i).rjust(4, '0') + "_i.png"
             org_img = img_array[i]
             org_img = helpers.normalize_hu(org_img)
             #org_img = helpers.normalize_hu(org_img)
             if not label_image:
                 cv2.imwrite(img_path, org_img * 255)
+                self.image_dirs.append(img_path)
             else:
                 org_img = cv2.cvtColor(org_img.astype('float32'), cv2.COLOR_GRAY2BGR)
+                self.image_dirs.append(img_path1)
                 for row in label_list:
                     slice_num = int(round(row[3]))
                     if slice_num == i:
@@ -535,7 +559,7 @@ class CanvasImage:
                             colorRGB = (0, 0, 255)
                         org_img = cv2.rectangle(org_img, xymin, xymax, colorRGB, 1)
                         #break
-                cv2.imwrite(img_path, org_img * 255)
+                cv2.imwrite(img_path1, org_img * 255)
     def Zoom(self, event):
         # print("hll")
 
@@ -659,7 +683,7 @@ class MainWindow(ttk.Frame):
     def __init__(self, mainframe, path):
         """ Initialize the main Frame """
         ttk.Frame.__init__(self, master=mainframe)
-        self.master.title('Dicom Viewer Ahmad & Can viewer version 0.2')
+        self.master.title('Radiologics Medical Dicom Viewer 0.4')
         # self.master.geometry('800x450+100+10')  # size of the main window
         self.master.geometry('920x600')  # size of the main window
         self.master.rowconfigure(0, weight=10)  # make the CanvasImage widget expandable
@@ -680,25 +704,26 @@ class MainWindow(ttk.Frame):
         # w.grid(row=1, column=1)
         # print(w.get())
 
+image_width = int(2* 920/3)
+image_height = int(2* 600/3)
+img = Image.new('RGB', (image_width, image_height), color=(139,0,0))
+# create the canvas
+first_image = ImageDraw.Draw(img)
+font = ImageFont.truetype('Lato-Bold.ttf', size=48)
+text_width, text_height = first_image.textsize('Radiologics Medical', font=font)
+print(f"Text width: {text_width}")
+print(f"Text height: {text_height}")
+x_pos = int((image_width - text_width) / 2)
+y_pos = int((image_height - text_height) / 2)
+first_image.text((x_pos, y_pos), "Radiologics Medical", font=font, fill='#FFFFFF')
 
-filename = 'lidc_extracted_images/1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860/img_0156_i.png'  # place path to your image here
-# filename = 'd:/Data/yandex_z18_1-1.tif'  # huge TIFF file 1.4 GB
-# filename = 'd:/Data/The_Garden_of_Earthly_Delights_by_Bosch_High_Resolution.jpg'
-# filename = 'd:/Data/The_Garden_of_Earthly_Delights_by_Bosch_High_Resolution.tif'
-# filename = 'd:/Data/heic1502a.tif'
-# filename = 'd:/Data/land_shallow_topo_east.tif'
-# filename = 'd:/Data/X1D5_B0002594.3FR'
+if not os.path.exists("C:/tmp/"):
+    os.mkdir("C:/tmp/")
+if not os.path.exists("C:/tmp/first/"):
+    os.mkdir("C:/tmp/first/")
+img.save("C:/tmp/first/radiologicsmedical.png","PNG")
+filename = "C:/tmp/first/radiologicsmedical.png"  # place path to your image here
 
-
-# image="/home/pi/Andromeda_application/tmp2/amount.png"
-# image_circle="/home/pi/Andromeda_application/tmp2/amount_circle.png"
-# path=""
-
-# make sure file exists, else show an error
-# if (os.path.isfile(image) and not os.path.isfile(image_circle)):
-#   app = MainWindow(tk.Tk(), path="/home/pi/Andromeda_application/tmp2/amount.png")
-
-# else:
 if not os.path.exists("viewer/"):
         os.mkdir("viewer/")
 app = MainWindow(tk.Tk(), path=filename)
