@@ -6,7 +6,7 @@ import os
 from tkinter import ttk
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 import cv2
-from tkinter import filedialog
+from tkinter import filedialog,messagebox
 import SimpleITK
 import helpers
 import numpy
@@ -16,6 +16,122 @@ import glob
 import shutil
 import copy
 
+class MousePositionTracker(tk.Frame):
+    """ Tkinter Canvas mouse position widget. """
+
+    def __init__(self, canvas):
+        self.canvas = canvas
+        self.canv_width = self.canvas.cget('width')
+        self.canv_height = self.canvas.cget('height')
+        self.reset()
+
+        # Create canvas cross-hair lines.
+        xhair_opts = dict(dash=(3, 2), fill='white', state=tk.HIDDEN)
+        self.lines = (self.canvas.create_line(0, 0, 0, self.canv_height, **xhair_opts),
+                      self.canvas.create_line(0, 0, self.canv_width,  0, **xhair_opts))
+
+    def cur_selection(self):
+        return (self.start, self.end)
+
+    def begin(self, event):
+        self.hide()
+        self.start = (event.x, event.y)  # Remember position (no drawing).
+
+    def update(self, event):
+        self.end = (event.x, event.y)
+        self._update(event)
+        self._command(self.start, (event.x, event.y))  # User callback.
+
+    def _update(self, event):
+        # Update cross-hair lines.
+        self.canvas.coords(self.lines[0], event.x, 0, event.x, self.canv_height)
+        self.canvas.coords(self.lines[1], 0, event.y, self.canv_width, event.y)
+        self.show()
+
+    def reset(self):
+        self.start = self.end = None
+
+    def hide(self):
+        self.canvas.itemconfigure(self.lines[0], state=tk.HIDDEN)
+        self.canvas.itemconfigure(self.lines[1], state=tk.HIDDEN)
+
+    def show(self):
+        self.canvas.itemconfigure(self.lines[0], state=tk.NORMAL)
+        self.canvas.itemconfigure(self.lines[1], state=tk.NORMAL)
+
+    def autodraw(self, command=lambda *args: None):
+        """Setup automatic drawing; supports command option"""
+        self.reset()
+        self._command = command
+        self.canvas.bind("<Button-1>", self.begin)
+        self.canvas.bind("<B1-Motion>", self.update)
+        self.canvas.bind("<ButtonRelease-1>", self.quit)
+
+    def quit(self, event):
+        self.hide()  # Hide cross-hairs.
+        self.reset()
+
+
+class SelectionObject:
+    """ Widget to display a rectangular area on given canvas defined by two points
+        representing its diagonal.
+    """
+    def __init__(self, canvas, select_opts):
+        # Create attributes needed to display selection.
+        self.canvas = canvas
+        self.select_opts1 = select_opts
+        self.width = self.canvas.cget('width')
+        self.height = self.canvas.cget('height')
+        self.bbox = []
+        # Options for areas outside rectanglar selection.
+        select_opts1 = self.select_opts1.copy()  # Avoid modifying passed argument.
+        select_opts1.update(state=tk.HIDDEN)  # Hide initially.
+        # Separate options for area inside rectanglar selection.
+        select_opts2 = dict(dash=(2, 2), fill='', outline='white', state=tk.HIDDEN)
+
+        # Initial extrema of inner and outer rectangles.
+        imin_x, imin_y,  imax_x, imax_y = 0, 0,  1, 1
+        omin_x, omin_y,  omax_x, omax_y = 0, 0,  self.width, self.height
+
+        self.rects = (
+            # Area *outside* selection (inner) rectangle.
+            self.canvas.create_rectangle(omin_x, omin_y,  omax_x, imin_y, **select_opts1),
+            self.canvas.create_rectangle(omin_x, imin_y,  imin_x, imax_y, **select_opts1),
+            self.canvas.create_rectangle(imax_x, imin_y,  omax_x, imax_y, **select_opts1),
+            self.canvas.create_rectangle(omin_x, imax_y,  omax_x, omax_y, **select_opts1),
+            # Inner rectangle.
+            self.canvas.create_rectangle(imin_x, imin_y,  imax_x, imax_y, **select_opts2)
+        )
+
+    def update(self, start, end):
+        # Current extrema of inner and outer rectangles.
+        imin_x, imin_y,  imax_x, imax_y = self._get_coords(start, end)
+        omin_x, omin_y,  omax_x, omax_y = 0, 0,  self.width, self.height
+
+        # Update coords of all rectangles based on these extrema.
+        self.canvas.coords(self.rects[0], omin_x, omin_y,  omax_x, imin_y),
+        self.canvas.coords(self.rects[1], omin_x, imin_y,  imin_x, imax_y),
+        self.canvas.coords(self.rects[2], imax_x, imin_y,  omax_x, imax_y),
+        self.canvas.coords(self.rects[3], omin_x, imax_y,  omax_x, omax_y),
+        self.canvas.coords(self.rects[4], imin_x, imin_y,  imax_x, imax_y),
+
+        for rect in self.rects:  # Make sure all are now visible.
+            self.canvas.itemconfigure(rect, state=tk.NORMAL)
+
+    def _get_coords(self, start, end):
+        """ Determine coords of a polygon defined by the start and
+            end points one of the diagonals of a rectangular area.
+        """
+        self.bbox=[min((start[0], end[0])), min((start[1], end[1])),
+                max((start[0], end[0])), max((start[1], end[1]))]
+        return (min((start[0], end[0])), min((start[1], end[1])),
+                max((start[0], end[0])), max((start[1], end[1])))
+    def get_coords(self):
+        return self.bbox
+
+    def hide(self):
+        for rect in self.rects:
+            self.canvas.itemconfigure(rect, state=tk.HIDDEN)
 
 class AutoScrollbar(ttk.Scrollbar):
     """ A scrollbar that hides itself if it's not needed. Works only for grid geometry manager """
@@ -48,6 +164,10 @@ class CanvasImage:
         self.imscale = 1.0
         self.app = placeholder
         self.annotations = []
+        self.annotated_nodules=[]
+        self.count_annotation=0
+        self.is_label = False
+        self.is_dicom = False
         # self.imscale = 1+(1*int(data[0])/100)  # scale for the canvas image zoom, public for outer classes
         self.__delta = 1.3  # zoom magnitude
         self.__filter = Image.ANTIALIAS  # could be: NEAREST, BILINEAR, BICUBIC and ANTIALIAS
@@ -67,19 +187,24 @@ class CanvasImage:
         file_menu.add_command(label="Open Label", command=self.open_label)  # To_open_file
         file_menu.add_command(label="Exit", command=placeholder.quit)
 
-        hbar.grid(row=1, column=0, sticky='we')
-        vbar.grid(row=0, column=1, sticky='ns')
+        hbar.grid(row=0, column=1, sticky='we',columnspan=4)
+        vbar.grid(row=1, column=0, sticky='ns',rowspan=4)
+        with warnings.catch_warnings():  # suppress DecompressionBombWarning
+            warnings.simplefilter('ignore')
+            self.__image = Image.open(self.path)  # open image, but down't load it
+        self.imwidth, self.imheight = self.__image.size  # public for outer classes
         # Create canvas and bind it with scrollbars. Public for outer classes
         self.canvas = tk.Canvas(self.__imframe, highlightthickness=0,
-                                xscrollcommand=hbar.set, yscrollcommand=vbar.set)
-        self.canvas.grid(row=0, column=0, sticky='nswe', columnspan=13)
+                                xscrollcommand=hbar.set, yscrollcommand=vbar.set,width=self.imwidth, height=self.imheight)
+        self.canvas.grid(row=1, column=1, sticky='nswe', columnspan=12,rowspan=12)
         self.canvas.update()  # wait till canvas is created
 
         # e=tk.Button(self.__imframe,text="Zoom in",command=self.Zoom,height=3,width=10)
         # e.grid(row=2, column=0)
         f = tk.Button(self.__imframe, text="Zoom out", command=self.Zoom2, height=3, width=10)
-        f.grid(row=0, column=1)
-
+        f.grid(row=1, column=14)
+        self.l2 = tk.Label(self.__imframe, text="Slice number: ", fg="black", font=26)
+        self.l2.grid(row=0, column=14, columnspan=1, sticky=NE)
         #f = tk.Label(self.__imframe, text="Tounch to zoom in", fg="blue", font=26)
         #f.grid(row=3, column=0)
 
@@ -88,16 +213,16 @@ class CanvasImage:
         # Bind events to the Canvas
 
         self.canvas.bind('<Configure>', lambda event: self.__show_image())  # canvas is resized
-        self.canvas.bind('<ButtonPress-1>', self.__move_from)  # remember canvas position
-        self.canvas.bind('<B1-Motion>', self.__move_to)  # move canvas to the new position
+        self.canvas.bind('<ButtonPress-2>', self.__move_from)  # remember canvas position
+        self.canvas.bind('<B2-Motion>', self.__move_to)  # move canvas to the new position
         self.canvas.bind('<MouseWheel>', self.__wheel)  # zoom for Windows and MacOS, but not Linux
         self.canvas.bind('<Button-5>', self.__wheel)  # zoom for Linux, wheel scroll down
         self.canvas.bind('<Button-4>', self.__wheel)  # zoom for Linux, wheel scroll up
         self.canvas.bind('<Control-r>', self.exclude_annotation)  # zoom for Linux, wheel scroll up
         self.canvas.bind('<Control-R>', self.exclude_annotation)  # zoom for Linux, wheel scroll up
 
-        self.canvas.bind('<Button-1>', self.Zoom)  # zoom for Linux, wheel scroll up
-
+        self.canvas.bind('<Double-Button-1>', self.Zoom)  # zoom for Linux, wheel scroll up
+        self.canvas.bind('<Double-Button-3>', self.Zoom2_)  # zoom for Linux, wheel scroll up
         # Handle keystrokes in idle mode, because program slows down on a weak computers,
         # when too many key stroke events in the same time
         self.canvas.bind('<Key>', lambda event: self.canvas.after_idle(self.__keystroke, event))
@@ -107,10 +232,7 @@ class CanvasImage:
         self.__huge_size = 14000  # define size of the huge image
         self.__band_width = 1024  # width of the tile band
         Image.MAX_IMAGE_PIXELS = 1000000000  # suppress DecompressionBombError for the big image
-        with warnings.catch_warnings():  # suppress DecompressionBombWarning
-            warnings.simplefilter('ignore')
-            self.__image = Image.open(self.path)  # open image, but down't load it
-        self.imwidth, self.imheight = self.__image.size  # public for outer classes
+
         if self.imwidth * self.imheight > self.__huge_size * self.__huge_size and \
                 self.__image.tile[0][0] == 'raw':  # only raw images could be tiled
             self.__huge = True  # image is huge
@@ -149,7 +271,19 @@ class CanvasImage:
         self.container = self.canvas.create_rectangle((0,0, self.imwidth, self.imheight), width=0)
         self.__show_image()  # show image on the canvas
         self.canvas.focus_set()  # set focus on the canvas
-
+    def get_canvas(self):
+        return self.canvas
+    def get_folder(self):
+        return self.folder
+    def get_currentSlice(self):
+        return self.current_slice
+    def get_image_dir(self):
+        return self.image_dirs;
+    def new_annotation(self,new_bbox,current_slice):
+        self.count_annotation +=1
+        nodule_id = "nodule_"+str(self.count_annotation).rjust(2,'0')
+        self.annotated_nodules.append([nodule_id,new_bbox[0],new_bbox[1],new_bbox[2],new_bbox[3],current_slice,self.patient_id])
+        return self.annotated_nodules,self.patient_id,self.folder
     def configure(self,event):
         #self.canvas.delete("all")
         #w, h = event.width, event.height
@@ -175,6 +309,7 @@ class CanvasImage:
 
         print("Patient ID: ", patient_id)
         reader = SimpleITK.ImageSeriesReader()
+        self.patient_id = patient_id
         original_image = SimpleITK.ReadImage(reader.GetGDCMSeriesFileNames(self.folder, patient_id))
         img_array = SimpleITK.GetArrayFromImage(original_image)
         origin = numpy.array(original_image.GetOrigin())  # x,y,z  Origin in world coordinates (mm)
@@ -253,6 +388,7 @@ class CanvasImage:
                 #     print("Too few overlaps")
             pos_lines = filtered_lines
         self.annotations = pos_lines
+        self.is_label = True
         return pos_lines
 
     def smaller(self):
@@ -298,8 +434,8 @@ class CanvasImage:
         """ Put CanvasImage widget on the parent widget """
         self.__imframe.grid(**kw)  # place CanvasImage widget on the grid
         self.__imframe.grid(sticky='nswe')  # make frame container sticky
-        self.__imframe.rowconfigure(0, weight=1)  # make canvas expandable
-        self.__imframe.columnconfigure(0, weight=1)
+        self.__imframe.rowconfigure(1, weight=20)  # make canvas expandable
+        self.__imframe.columnconfigure(1, weight=20)
 
     def pack(self, **kw):
         """ Exception: cannot use pack with this widget """
@@ -312,6 +448,7 @@ class CanvasImage:
         #self.app.filename = filedialog.askopenfilename()
         self.app.directory = filedialog.askdirectory()
         self.folder = self.app.directory
+        self._update_folder_label()
         print(self.folder)
         self.read_dicom()
         print(self.image_dirs)
@@ -323,7 +460,8 @@ class CanvasImage:
         self.container = self.canvas.create_rectangle((0, 0, self.imwidth, self.imheight), width=0)
         self.__pyramid = [self.smaller()] if self.__huge else [Image.open(self.path)]
         self.__show_image()
-        pass
+        self.l2.config(text="Slice number: " + str(self.current_slice + 1) + "/" + str(len(self.image_dirs)))
+
     def open_label(self):
         self.app.filename = filedialog.askopenfilename(title = "Select file",filetypes = (("xml files","*.xml"),("all files","*.*")))
         self.xml_path = self.app.filename
@@ -331,6 +469,11 @@ class CanvasImage:
         pos_annot = self.load_lidc_xml()
         print(pos_annot)
         self.read_dicom(label_image=True,label_list=pos_annot)
+    def update_folder_label(self,label):
+        self._flabel = label
+
+    def _update_folder_label(self):
+        self._flabel.config(text=self.folder)
     # noinspection PyUnusedLocal
     def __scroll_x(self, *args, **kwargs):
         """ Scroll canvas horizontally and redraw the image """
@@ -342,6 +485,8 @@ class CanvasImage:
         """ Scroll canvas vertically and redraw the image """
         self.canvas.yview(*args)  # scroll vertically
         self.__show_image()  # redraw the image
+    def get_status(self):
+        return self.is_dicom,self.is_label
     def exclude_annotation(self,event):
         img_path = "C:/tmp/original/" + "img_" + str(self.current_slice).rjust(4, '0') + "_i.png"
         self.org_img = cv2.imread(img_path)
@@ -496,6 +641,7 @@ class CanvasImage:
                 #self.imwidth, self.imheight = self.__image.size
                 #self.container = self.canvas.create_rectangle((0, 0, self.imwidth, self.imheight), width=0)
                 self.__pyramid = [self.smaller()] if self.__huge else [Image.open(self.path)]
+                self.l2.config(text="Slice number: " + str(self.current_slice + 1) + "/" + str(len(self.image_dirs)))
         if event.num == 4 or event.delta == 120:  # scroll up, bigger
             #i = min(self.canvas.winfo_width(), self.canvas.winfo_height()) >> 1
             #if i < self.imscale: return  # 1 pixel is bigger than the visible area
@@ -509,6 +655,7 @@ class CanvasImage:
                 #self.imwidth, self.imheight = self.__image.size
                 #self.container = self.canvas.create_rectangle((0, 0, self.imwidth, self.imheight), width=0)
                 self.__pyramid = [self.smaller()] if self.__huge else [Image.open(self.path)]
+                self.l2.config(text="Slice number: " + str(self.current_slice + 1) + "/" + str(len(self.image_dirs)))
         # Take appropriate image from the pyramid
         k = self.imscale * self.__ratio  # temporary coefficient
         self.__curr_img = min((-1) * int(math.log(k, self.__reduction)), len(self.__pyramid) - 1)
@@ -523,6 +670,9 @@ class CanvasImage:
         patient_id = os.path.basename(self.folder)
         itk_img = SimpleITK.ReadImage(reader.GetGDCMSeriesFileNames(self.folder, patient_id))
         img_array = SimpleITK.GetArrayFromImage(itk_img)
+        #Referash annotations
+        self.annotated_nodules = []
+        self.count_annotation = 0
         if not os.path.exists("C:/tmp/"):
             os.mkdir("C:/tmp/")
         if not os.path.exists("C:/tmp/original/"):
@@ -557,9 +707,11 @@ class CanvasImage:
                             xymax = (int(row[1] + 3), int(row[2] + 3))
                             xymin = (int(row[1] - 3), int(row[2] - 3))
                             colorRGB = (0, 0, 255)
+                        print("Dicom viewer, slice number: ", str(slice_num).rjust(4, '0'),"\t bbox: ", xymin,xymax)
                         org_img = cv2.rectangle(org_img, xymin, xymax, colorRGB, 1)
                         #break
                 cv2.imwrite(img_path1, org_img * 255)
+        self.is_dicom = True
     def Zoom(self, event):
         # print("hll")
 
@@ -635,6 +787,35 @@ class CanvasImage:
         # Redraw some figures before showing image on the screen
         self.redraw_figures()  # method for child classes
         self.__show_image()
+    def Zoom2_(self,event):
+
+        """ Zoom with mouse wheel """
+        # x = self.canvas.canvasx(event.x)  # get coordinates of the event on the canvas
+        # y = self.canvas.canvasy(event.y)
+        x = 528
+        y = 292
+        if self.outside(x, y): return  # zoom only inside image area
+        scale = 1.0
+        # Respond to Linux (event.num) or Windows (event.delta) wheel event
+        # if event.num == 5 or event.delta == -120:  # scroll down, smaller
+        if round(self.__min_side * self.imscale) < 700: return  # image is less than 30 pixels
+        print(round(self.__min_side * self.imscale))
+        #     self.imscale /= self.__delta
+        #     scale        /= self.__delta
+        # if event.num == 4 or event.delta == 120:  # scroll up, bigger
+        # i = min(self.canvas.winfo_width(), self.canvas.winfo_height()) >> 1
+        # if i < self.imscale: return  # 1 pixel is bigger than the visible area
+        self.imscale /= self.__delta
+        scale /= self.__delta
+        # Take appropriate image from the pyramid
+        k = self.imscale * self.__ratio  # temporary coefficient
+        self.__curr_img = min((-1) * int(math.log(k, self.__reduction)), len(self.__pyramid) - 1)
+        self.__scale = k * math.pow(self.__reduction, max(0, self.__curr_img))
+        #
+        self.canvas.scale('all', x, y, scale, scale)  # rescale all objects
+        # Redraw some figures before showing image on the screen
+        self.redraw_figures()  # method for child classes
+        self.__show_image()
 
     def __keystroke(self, event):
         """ Scrolling with the keyboard.
@@ -682,27 +863,112 @@ class MainWindow(ttk.Frame):
 
     def __init__(self, mainframe, path):
         """ Initialize the main Frame """
+        self.SELECT_OPTS = dict(dash=(2, 2), stipple='gray25', fill='red',
+                           outline='')
         ttk.Frame.__init__(self, master=mainframe)
         self.master.title('Radiologics Medical Dicom Viewer 0.4')
         # self.master.geometry('800x450+100+10')  # size of the main window
         self.master.geometry('920x600')  # size of the main window
-        self.master.rowconfigure(0, weight=10)  # make the CanvasImage widget expandable
-        self.master.columnconfigure(0, weight=10)
-        canvas = CanvasImage(self.master, path)  # create widget
-        canvas.grid(row=0, column=0)  # show widget
+        self.master.rowconfigure(1, weight=20)  # make the CanvasImage widget expandable
+        self.master.columnconfigure(1, weight=20)
+        self.canvas_class = CanvasImage(self.master, path)  # create widget
+        self.canvas_class.grid(row=1, column=1)  # show widget
+        f = tk.Button(self.master, text="Annotation Mode", command=self.annotation, height=3, width=20)
+        f.grid(row=5, column=1)
+        scan_folder = self.canvas_class.get_folder()
+        if scan_folder != "":
+            fldr = scan_folder
+        else:
+            fldr = "No dicom file loaded"
+        l = tk.Label(self.master, text=fldr, fg="black", font=26)
+        self.canvas_class.update_folder_label(l)
+        l.grid(row=0, column=0,columnspan=12,sticky=W)
 
-        # def capture():
-        # print("hrllo")
-        # f=open("x1.txt","w+")
-        # f.writelines(str(w.get()))
-        # os.system('python3 /home/pi/Desktop/displayimage1.py')
+        self.master.rowconfigure(0, weight=1)  # make canvas expandable
+        self.master.columnconfigure(0, weight=1)
+        self.canvas = self.canvas_class.get_canvas()
 
-        # e=tk.Button(self.master,text="Capture",command=capture,height=3,width=10)
-        # e.grid(row=1, column=0)
+    def annotation(self):
+        loaded_dicom,loaded_labels = self.canvas_class.get_status()
+        if loaded_dicom:
+            self.current_slice = self.canvas_class.get_currentSlice()
+            if loaded_labels:
+                self.path = "C:/tmp/" + "img_" + str(self.current_slice).rjust(4, '0') + "_i.png"
+            else:
+                self.path = "C:/tmp/original/" + "img_" + str(self.current_slice).rjust(4, '0') + "_i.png"
+            print("Annotater view slice number: ", str(self.current_slice).rjust(4, '0'))
+            self.newWindow = Toplevel(self.master)
+            self.__image = Image.open(self.path)
+            img = ImageTk.PhotoImage(self.__image)
+            self.canvas = tk.Canvas(self.newWindow, width=img.width(), height=img.height(),
+                                    borderwidth=0, highlightthickness=0)
+            self.canvas.pack(expand=True)
 
-        # w = tk.Scale(self.master, from_=0, to=100,orient=HORIZONTAL)
-        # w.grid(row=1, column=1)
-        # print(w.get())
+            self.canvas.create_image(0, 0, image=img, anchor=tk.NW)
+            self.canvas.img = img  # Keep reference.
+            # sets the title of the
+            # Toplevel widget
+            self.newWindow.title("Annotater")
+
+            # sets the geometry of toplevel
+            self.newWindow.geometry("920x600")
+            self.canvas.bind('<MouseWheel>', self.__wheel)  # zoom for Windows and MacOS, but not Linux
+            self.selection_obj = SelectionObject(self.canvas, self.SELECT_OPTS)
+            f = tk.Button(self.newWindow, text="Save Annotation", command=self.save_annotation, height=3, width=20)
+            f.pack()
+            l = tk.Label(self.newWindow, text="Click Save Annotation to save the bbox as csv.", fg="black", font=26)
+            l.pack()
+            # Callback function to update it given two points of its diagonal.
+            def on_drag(start, end, **kwarg):  # Must accept these arguments.
+                self.selection_obj.update(start, end)
+
+            # Create mouse position tracker that uses the function.
+            self.posn_tracker = MousePositionTracker(self.canvas)
+            self.posn_tracker.autodraw(command=on_drag)  # Enable callbacks.
+        else:
+            messagebox.showerror(title="No dicom file loaded", message="Load dicom file to enable this feature ")
+    def save_annotation(self):
+        print(self.selection_obj.get_coords())
+        annotated_nodules_list,patient_id,folder = self.canvas_class.new_annotation(self.selection_obj.get_coords(),self.current_slice)
+        df = pandas.DataFrame(annotated_nodules_list,
+                              columns=["nodule_id", "bbox_x0", "bbox_y0", "bbox_x1", "bbox_x1", "slice_num",
+                                       "patient_id"])
+        df.to_csv("viewer/" + str(patient_id) + "_new_annotation_viewer.csv", index=False)
+        df.to_csv(folder + "/" + "new_annotation_viewer.csv", index=False)
+
+    def __wheel(self, event):
+        """ Zoom with mouse wheel """
+        image_dirs = self.canvas_class.get_image_dir()
+        # Respond to Linux (event.num) or Windows (event.delta) wheel event
+        def on_drag(start, end, **kwarg):  # Must accept these arguments.
+            self.selection_obj.update(start, end)
+        if event.num == 5 or event.delta == -120:  # scroll down, smaller
+            if self.current_slice > 0:
+                self.current_slice -= 1
+                self.path = image_dirs[self.current_slice]
+                self.__image.close()
+                img = ImageTk.PhotoImage(Image.open(self.path))
+                self.canvas.create_image(0, 0, image=img, anchor=tk.NW)
+                self.canvas.img = img  # Keep reference.
+                self.selection_obj = SelectionObject(self.canvas, self.SELECT_OPTS)
+                self.posn_tracker = MousePositionTracker(self.canvas)
+                self.posn_tracker.autodraw(command=on_drag)  # Enable callbacks.
+        if event.num == 4 or event.delta == 120:  # scroll up, bigger
+            #i = min(self.canvas.winfo_width(), self.canvas.winfo_height()) >> 1
+            #if i < self.imscale: return  # 1 pixel is bigger than the visible area
+            #self.imscale *= self.__delta
+            #scale *= self.__delta
+            if self.current_slice < len(image_dirs):
+                self.current_slice += 1
+                self.path = image_dirs[self.current_slice]
+                self.__image.close()
+                img = ImageTk.PhotoImage(Image.open(self.path))
+                self.canvas.create_image(0, 0, image=img, anchor=tk.NW)
+                self.canvas.img = img  # Keep reference.
+                self.selection_obj = SelectionObject(self.canvas, self.SELECT_OPTS)
+                self.posn_tracker = MousePositionTracker(self.canvas)
+                self.posn_tracker.autodraw(command=on_drag)  # Enable callbacks.
+
 
 image_width = int(2* 920/3)
 image_height = int(2* 600/3)
