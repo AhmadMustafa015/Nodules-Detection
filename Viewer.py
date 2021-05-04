@@ -1,196 +1,162 @@
-import csv
-import os
-import SimpleITK
-import settings
-import glob
-import ntpath
-import PySimpleGUI as sg
-import cv2
-import numpy as np
-#name = input("Enter your name: ")
-path = settings.BASE_DIR +'1.3.6.1.4.1.14519.5.2.1.6279.6001.330643702676971528301859647742_annos_pos_lidc.csv'
-name = '1.3.6.1.4.1.14519.5.2.1.6279.6001.330643702676971528301859647742'
-direc = "D:/LIDC-IDRI/LIDC-IDRI-0802/1.3.6.1.4.1.14519.5.2.1.6279.6001.322126192251489550021873181090/1.3.6.1.4.1.14519.5.2.1.6279.6001.330643702676971528301859647742"
-patientid_loc = []
-slice_x = []
-slice_y = []
-slice_z = []
-
-with open(path, 'r') as file:
-    reader = csv.reader(file)
-    a = 0
-    for row in reader:
-        if a == 0:
-            a += 1
-            continue
-
-        patient_id = row[0]
-        if True:
-            patientid_loc.append(a)
-            slice_x.append(row[1])
-            slice_y.append(row[2])
-            slice_z.append(row[3])
-
-        a += 1
-        #print(row)
-        '''
-        if a == 10:
-            break
-        '''
-b = 1
-
-src_dir = settings.LIDC_RAW_SRC_DIR
-src_path = []
-"""
-for src_p in glob.glob(src_dir + "*/*/*/*30.dcm"):
-    src_p = os.path.split(src_p)[0]
-    src_path.append(src_p)
-
-for src_p in src_path:
-    b += 1
-    patient_id2 = ntpath.basename(src_p)
-    if name == patient_id2:
-        files_dir = os.listdir(src_p)
-        _,file_extention = os.path.splitext(files_dir[0])
-        #if file_extention == ".dcm":
-        reader = SimpleITK.ImageSeriesReader()
-        # Use the functional interface to read the image series.
-        itk_img = SimpleITK.ReadImage(reader.GetGDCMSeriesFileNames(src_p, patient_id2))
-        #elif file_extention == ".mhd":
-        #itk_img = SimpleITK.ReadImage(src_p)
-        img_array = SimpleITK.GetArrayFromImage(itk_img)
-c =1
-"""
-reader = SimpleITK.ImageSeriesReader()
-itk_img = SimpleITK.ReadImage(reader.GetGDCMSeriesFileNames(direc, name))
-img_array = SimpleITK.GetArrayFromImage(itk_img)
-def main():
-    sg.theme("LightGreen")
-
-    # Define the window layout
-    layout = [
-        [sg.Text("OpenCV Demo", size=(60, 1), justification="center")],
-        [sg.Image(filename="", key="-IMAGE-")],
-        [sg.Radio("None", "Radio", True, size=(10, 1))],
-        [
-            sg.Radio("threshold", "Radio", size=(10, 1), key="-THRESH-"),
-            sg.Slider(
-                (0, 255),
-                128,
-                1,
-                orientation="h",
-                size=(40, 15),
-                key="-THRESH SLIDER-",
-            ),
-        ],
-        [
-            sg.Radio("canny", "Radio", size=(10, 1), key="-CANNY-"),
-            sg.Slider(
-                (0, 255),
-                128,
-                1,
-                orientation="h",
-                size=(20, 15),
-                key="-CANNY SLIDER A-",
-            ),
-            sg.Slider(
-                (0, 255),
-                128,
-                1,
-                orientation="h",
-                size=(20, 15),
-                key="-CANNY SLIDER B-",
-            ),
-        ],
-        [
-            sg.Radio("blur", "Radio", size=(10, 1), key="-BLUR-"),
-            sg.Slider(
-                (1, 11),
-                1,
-                1,
-                orientation="h",
-                size=(40, 15),
-                key="-BLUR SLIDER-",
-            ),
-        ],
-        [
-            sg.Radio("hue", "Radio", size=(10, 1), key="-HUE-"),
-            sg.Slider(
-                (0, 225),
-                0,
-                1,
-                orientation="h",
-                size=(40, 15),
-                key="-HUE SLIDER-",
-            ),
-        ],
-        [
-            sg.Radio("enhance", "Radio", size=(10, 1), key="-ENHANCE-"),
-            sg.Slider(
-                (1, 255),
-                128,
-                1,
-                orientation="h",
-                size=(40, 15),
-                key="-ENHANCE SLIDER-",
-            ),
-        ],
-        [sg.Button("Exit", size=(10, 1))],
-    ]
-
-    # Create the window and show it without the plot
-    window = sg.Window("OpenCV Integration", layout, location=(800, 400))
-
-    cap = cv2.VideoCapture(0)
-    while True:
-        event, values = window.read(timeout=20)
-        if event == "Exit" or event == sg.WIN_CLOSED:
-            break
-
-        ret, frame = cap.read()
-
-        if values["-THRESH-"]:
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)[:, :, 0]
-            frame = cv2.threshold(
-                frame, values["-THRESH SLIDER-"], 255, cv2.THRESH_BINARY
-            )[1]
-        elif values["-CANNY-"]:
-            frame = cv2.Canny(
-                frame, values["-CANNY SLIDER A-"], values["-CANNY SLIDER B-"]
-            )
-        elif values["-BLUR-"]:
-            frame = cv2.GaussianBlur(frame, (21, 21), values["-BLUR SLIDER-"])
-        elif values["-HUE-"]:
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-            frame[:, :, 0] += int(values["-HUE SLIDER-"])
-            frame = cv2.cvtColor(frame, cv2.COLOR_HSV2BGR)
-        elif values["-ENHANCE-"]:
-            enh_val = values["-ENHANCE SLIDER-"] / 40
-            clahe = cv2.createCLAHE(clipLimit=enh_val, tileGridSize=(8, 8))
-            lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
-            lab[:, :, 0] = clahe.apply(lab[:, :, 0])
-            frame = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
-
-        imgbytes = cv2.imencode(".png", frame)[1].tobytes()
-        window["-IMAGE-"].update(data=imgbytes)
-
-    window.close()
-
-main()
-
-"""
-
-        extract_dicom_images_patient(src_p)
-
-        dir_path = src_dir
-
-        print("Dir_Path: ", src_dir)
-        patient_id = os.path.basename(src_dir)
-        search_dirs = os.listdir(settings.LIDC_EXTRACTED_IMAGE_DIR)
-        scan_path = settings.LIDC_EXTRACTED_IMAGE_DIR + patient_id + "/img_0033_i.png"
-        if os.path.exists(scan_path):
-            return
+import tkinter as tk
+from PIL import Image, ImageTk
 
 
-        
-"""
+class MousePositionTracker(tk.Frame):
+    """ Tkinter Canvas mouse position widget. """
+
+    def __init__(self, canvas):
+        self.canvas = canvas
+        self.canv_width = self.canvas.cget('width')
+        self.canv_height = self.canvas.cget('height')
+        self.reset()
+
+        # Create canvas cross-hair lines.
+        xhair_opts = dict(dash=(3, 2), fill='white', state=tk.HIDDEN)
+        self.lines = (self.canvas.create_line(0, 0, 0, self.canv_height, **xhair_opts),
+                      self.canvas.create_line(0, 0, self.canv_width,  0, **xhair_opts))
+
+    def cur_selection(self):
+        return (self.start, self.end)
+
+    def begin(self, event):
+        self.hide()
+        self.start = (event.x, event.y)  # Remember position (no drawing).
+
+    def update(self, event):
+        self.end = (event.x, event.y)
+        self._update(event)
+        self._command(self.start, (event.x, event.y))  # User callback.
+
+    def _update(self, event):
+        # Update cross-hair lines.
+        self.canvas.coords(self.lines[0], event.x, 0, event.x, self.canv_height)
+        self.canvas.coords(self.lines[1], 0, event.y, self.canv_width, event.y)
+        self.show()
+
+    def reset(self):
+        self.start = self.end = None
+
+    def hide(self):
+        self.canvas.itemconfigure(self.lines[0], state=tk.HIDDEN)
+        self.canvas.itemconfigure(self.lines[1], state=tk.HIDDEN)
+
+    def show(self):
+        self.canvas.itemconfigure(self.lines[0], state=tk.NORMAL)
+        self.canvas.itemconfigure(self.lines[1], state=tk.NORMAL)
+
+    def autodraw(self, command=lambda *args: None):
+        """Setup automatic drawing; supports command option"""
+        self.reset()
+        self._command = command
+        self.canvas.bind("<Button-1>", self.begin)
+        self.canvas.bind("<B1-Motion>", self.update)
+        self.canvas.bind("<ButtonRelease-1>", self.quit)
+
+    def quit(self, event):
+        self.hide()  # Hide cross-hairs.
+        self.reset()
+
+
+class SelectionObject:
+    """ Widget to display a rectangular area on given canvas defined by two points
+        representing its diagonal.
+    """
+    def __init__(self, canvas, select_opts):
+        # Create attributes needed to display selection.
+        self.canvas = canvas
+        self.select_opts1 = select_opts
+        self.width = self.canvas.cget('width')
+        self.height = self.canvas.cget('height')
+
+        # Options for areas outside rectanglar selection.
+        select_opts1 = self.select_opts1.copy()  # Avoid modifying passed argument.
+        select_opts1.update(state=tk.HIDDEN)  # Hide initially.
+        # Separate options for area inside rectanglar selection.
+        select_opts2 = dict(dash=(2, 2), fill='', outline='white', state=tk.HIDDEN)
+
+        # Initial extrema of inner and outer rectangles.
+        imin_x, imin_y,  imax_x, imax_y = 0, 0,  1, 1
+        omin_x, omin_y,  omax_x, omax_y = 0, 0,  self.width, self.height
+
+        self.rects = (
+            # Area *outside* selection (inner) rectangle.
+            self.canvas.create_rectangle(omin_x, omin_y,  omax_x, imin_y, **select_opts1),
+            self.canvas.create_rectangle(omin_x, imin_y,  imin_x, imax_y, **select_opts1),
+            self.canvas.create_rectangle(imax_x, imin_y,  omax_x, imax_y, **select_opts1),
+            self.canvas.create_rectangle(omin_x, imax_y,  omax_x, omax_y, **select_opts1),
+            # Inner rectangle.
+            self.canvas.create_rectangle(imin_x, imin_y,  imax_x, imax_y, **select_opts2)
+        )
+
+    def update(self, start, end):
+        # Current extrema of inner and outer rectangles.
+        imin_x, imin_y,  imax_x, imax_y = self._get_coords(start, end)
+        omin_x, omin_y,  omax_x, omax_y = 0, 0,  self.width, self.height
+
+        # Update coords of all rectangles based on these extrema.
+        self.canvas.coords(self.rects[0], omin_x, omin_y,  omax_x, imin_y),
+        self.canvas.coords(self.rects[1], omin_x, imin_y,  imin_x, imax_y),
+        self.canvas.coords(self.rects[2], imax_x, imin_y,  omax_x, imax_y),
+        self.canvas.coords(self.rects[3], omin_x, imax_y,  omax_x, omax_y),
+        self.canvas.coords(self.rects[4], imin_x, imin_y,  imax_x, imax_y),
+
+        for rect in self.rects:  # Make sure all are now visible.
+            self.canvas.itemconfigure(rect, state=tk.NORMAL)
+
+    def _get_coords(self, start, end):
+        """ Determine coords of a polygon defined by the start and
+            end points one of the diagonals of a rectangular area.
+        """
+        return (min((start[0], end[0])), min((start[1], end[1])),
+                max((start[0], end[0])), max((start[1], end[1])))
+
+    def hide(self):
+        for rect in self.rects:
+            self.canvas.itemconfigure(rect, state=tk.HIDDEN)
+
+
+class Application(tk.Frame):
+
+    # Default selection object options.
+    SELECT_OPTS = dict(dash=(2, 2), stipple='gray25', fill='red',
+                          outline='')
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        path = "img_0002_norm.png"
+        img = ImageTk.PhotoImage(Image.open(path))
+        self.canvas = tk.Canvas(root, width=img.width(), height=img.height(),
+                                borderwidth=0, highlightthickness=0)
+        self.canvas.pack(expand=True)
+
+        self.canvas.create_image(0, 0, image=img, anchor=tk.NW)
+        self.canvas.img = img  # Keep reference.
+
+        # Create selection object to show current selection boundaries.
+        self.selection_obj = SelectionObject(self.canvas, self.SELECT_OPTS)
+
+        # Callback function to update it given two points of its diagonal.
+        def on_drag(start, end, **kwarg):  # Must accept these arguments.
+            self.selection_obj.update(start, end)
+
+        # Create mouse position tracker that uses the function.
+        self.posn_tracker = MousePositionTracker(self.canvas)
+        self.posn_tracker.autodraw(command=on_drag)  # Enable callbacks.
+
+
+if __name__ == '__main__':
+
+    WIDTH, HEIGHT = 900, 900
+    BACKGROUND = 'grey'
+    TITLE = 'Image Cropper'
+
+    root = tk.Tk()
+    root.title(TITLE)
+    root.geometry('%sx%s' % (WIDTH, HEIGHT))
+    root.configure(background=BACKGROUND)
+
+    app = Application(root, background=BACKGROUND)
+    app.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.TRUE)
+    app.mainloop()

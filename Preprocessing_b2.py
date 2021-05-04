@@ -76,6 +76,40 @@ def make_annotation_images_lidc(compined_list):
         save_cube_img(dst_dir + patient_id + "_" + str(anno_index) + "_" + str(malscore * malscore) + "_1_pos.png", cube_img, 8, 8)
     helpers.print_tabbed([patient_index, patient_id, len(df_annos)], [5, 64, 8])
 
+def make_annotation_images_lndb(compined_list):
+    csv_file = compined_list[1]
+    patient_index = compined_list[0]
+    dst_dir = settings.BASE_DIR_SSD + "generated_traindata2/lndb_train_cubes/"
+    patient_id = ntpath.basename(csv_file).replace("_annos_pos_lndb.csv", "")
+    df_annos = pandas.read_csv(csv_file)
+    if len(df_annos) == 0:
+        return
+    try:
+        images = helpers.load_patient_images(patient_id, settings.LNDB_EXTRACTED_IMAGE_DIR, "*" + CUBE_IMGTYPE_SRC + ".png")
+    except:
+        print("Error in patient ID: ", patient_id)
+
+    for index, row in df_annos.iterrows():
+        coord_x = int(row["coord_x"] * images.shape[2])
+        coord_y = int(row["coord_y"] * images.shape[1])
+        coord_z = int(row["coord_z"] * images.shape[0])
+        anno_index = row["anno_index"]
+        anno_index = str(anno_index).replace(" ", "xspacex").replace(".", "xpointx").replace("_", "xunderscorex")
+        cube_img = get_cube_from_img(images, coord_x, coord_y, coord_z, 64)
+        if cube_img.sum() < 5:
+            print(" ***** Skipping ", coord_x, coord_y, coord_z)
+            continue
+
+        if cube_img.mean() < 10:
+            print(" ***** Suspicious ", coord_x, coord_y, coord_z)
+
+        if cube_img.shape != (64, 64, 64):
+            print(" ***** incorrect shape !!! ", str(anno_index), " - ",(coord_x, coord_y, coord_z))
+            continue
+
+        save_cube_img(dst_dir + patient_id + "_" + str(anno_index) + "_" + str(0) + "_1_pos.png", cube_img, 8, 8)
+    helpers.print_tabbed([patient_index, patient_id, len(df_annos)], [5, 64, 8])
+
 def make_candidate_auto_images(compined_list):
     index = compined_list[0]
     csv_file = compined_list[1]
@@ -156,11 +190,28 @@ def make_annotation_images_lidc_p():
     pool = Pool(settings.WORKER_POOL_SIZE)
     pool.map(make_annotation_images_lidc, patient_inx_csv)
 
+def make_annotation_images_lndb_p():
+    src_dir = settings.LNDB_EXTRACTED_IMAGE_DIR + "_labels/"
+    dst_dir = settings.BASE_DIR_SSD + "generated_traindata2/lndb_train_cubes/"
+    if not os.path.exists(dst_dir):
+        os.mkdir(dst_dir)
+
+    for file_path in glob.glob(dst_dir + "*.*"):
+        os.remove(file_path)
+    patient_inx_csv = []
+    for patient_index, csv_file in enumerate(glob.glob(src_dir + "*_annos_pos_lndb.csv")):
+        patient_inx_csv.append([patient_index, csv_file])
+
+    pool = Pool(settings.WORKER_POOL_SIZE)
+    pool.map(make_annotation_images_lndb, patient_inx_csv)
+
 if __name__ == "__main__":
     if not os.path.exists(settings.BASE_DIR_SSD + "generated_traindata2/"):
         os.mkdir(settings.BASE_DIR_SSD + "generated_traindata2/")
 
-    if True:
+    if False:
         make_annotation_images_lidc_p()
-    if True:
+    if False:
         make_candidate_auto_images_p(["falsepos", "edge", "luna"])
+    if True:
+        make_annotation_images_lndb_p()
