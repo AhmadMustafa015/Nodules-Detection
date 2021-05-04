@@ -709,7 +709,7 @@ image_height = int(2* 600/3)
 img = Image.new('RGB', (image_width, image_height), color=(139,0,0))
 # create the canvas
 first_image = ImageDraw.Draw(img)
-font = ImageFont.truetype('Lato-Bold.ttf', size=48)
+font = ImageFont.truetype("arial.ttf", size=48)
 text_width, text_height = first_image.textsize('Radiologics Medical', font=font)
 print(f"Text width: {text_width}")
 print(f"Text height: {text_height}")
