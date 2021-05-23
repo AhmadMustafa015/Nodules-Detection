@@ -866,7 +866,7 @@ class MainWindow(ttk.Frame):
         self.SELECT_OPTS = dict(dash=(2, 2), stipple='gray25', fill='red',
                            outline='')
         ttk.Frame.__init__(self, master=mainframe)
-        self.master.title('Radiologics Medical Dicom Viewer 0.4')
+        self.master.title('Radiologics Medical Dicom Viewer 0.5')
         # self.master.geometry('800x450+100+10')  # size of the main window
         self.master.geometry('920x600')  # size of the main window
         self.master.rowconfigure(1, weight=20)  # make the CanvasImage widget expandable
