@@ -314,10 +314,10 @@ def extract_dicom_images_patient(src_dir):
 def load_patient(src_dir):
     # slices = [dicom.read_file(src_dir + '/' + s) for s in os.listdir(src_dir)]
     slices = []
-    print(src_dir)
+    #print(src_dir)
     for files in glob.glob(src_dir + "/*.dcm"):
         slices.append(dicom.read_file(files))
-    print(len(slices))
+    #print(len(slices))
     slices.sort(key=lambda x: int(x.InstanceNumber))
     try:
         slice_thickness = numpy.abs(slices[0].ImagePositionPatient[2] - slices[1].ImagePositionPatient[2])
