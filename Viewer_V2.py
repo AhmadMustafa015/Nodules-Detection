@@ -866,7 +866,7 @@ class MainWindow(ttk.Frame):
         self.SELECT_OPTS = dict(dash=(2, 2), stipple='gray25', fill='red',
                            outline='')
         ttk.Frame.__init__(self, master=mainframe)
-        self.master.title('Radiologics Medical Dicom Viewer 0.4')
+        self.master.title('Radiologics Medical Dicom Viewer 0.5')
         # self.master.geometry('800x450+100+10')  # size of the main window
         self.master.geometry('920x600')  # size of the main window
         self.master.rowconfigure(1, weight=20)  # make the CanvasImage widget expandable
@@ -880,9 +880,9 @@ class MainWindow(ttk.Frame):
             fldr = scan_folder
         else:
             fldr = "No dicom file loaded"
-        l = tk.Label(self.master, text=fldr, fg="black", font=26)
+        l = tk.Label(self.master, text=fldr, fg="black", font=10)
         self.canvas_class.update_folder_label(l)
-        l.grid(row=0, column=0,columnspan=12,sticky=W)
+        l.grid(row=0, column=0,columnspan=6,sticky=W)
 
         self.master.rowconfigure(0, weight=1)  # make canvas expandable
         self.master.columnconfigure(0, weight=1)
@@ -993,5 +993,8 @@ filename = "C:/tmp/first/radiologicsmedical.png"  # place path to your image her
 if not os.path.exists("viewer/"):
         os.mkdir("viewer/")
 app = MainWindow(tk.Tk(), path=filename)
+
+
+
 
 app.mainloop()
