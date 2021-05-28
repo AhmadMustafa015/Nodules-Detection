@@ -64,7 +64,7 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
     #model = Train.get_net(input_shape=(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE, 1), load_weight_path=model_path)
     model = tf.keras.models.load_model(model_path)
     patient_ids = []
-    if evaluate:
+    if evaluate and only_patient_id == None:
         cubic_images = pandas.read_csv(settings.BASE_DIR_SSD + "Test_data.csv", sep=',').values.tolist()
         model.summary()
         random.shuffle(cubic_images)
@@ -77,7 +77,7 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
             print("Test Case ID: ", parts[0])
         print("start evaluation on: ", len(patient_ids), " Patient")
     else:
-        patient_ids = only_patient_id
+        patient_ids = [only_patient_id]
 
     all_predictions_csv = []
     all_metric = []
@@ -148,8 +148,11 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                     exist = True
                     unique_nodules.append([tx,ty,tz])
                 for index in range(len(unique_nodules)):
-                    if abs(tx - unique_nodules[index][0]) < 0.08 and abs(ty - unique_nodules[index][1]) < 0.08 and abs(
-                            tz - unique_nodules[index][2]) < 0.08:
+                    euclidean_distance = math.sqrt(
+                        (tx - unique_nodules[index][0]) ** 2 + (ty - unique_nodules[index][1]) ** 2 + (
+                                    tz - unique_nodules[index][2]) ** 2)
+                    print(euclidean_distance)
+                    if euclidean_distance < 0.03:
                         exist = True
                 if not exist:
                     unique_nodules.append([tx, ty, tz])
@@ -195,43 +198,60 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                                     p_x = p_x * step + CROP_SIZE / 2
                                     #diameter_mm = round(p[1][i][0], 4)
                                     diameter_mm = 32.0
+                                    diameter_mm_perc = round(diameter_mm / max(patient_img.shape[1],patient_img.shape[2]), 4)
                                     #print (patient_img.shape[0], patient_img.shape[1], patient_img.shape[2])
 
                                     p_z_perc = round(p_z / patient_img.shape[0], 4)
                                     p_y_perc = round(p_y / patient_img.shape[1], 4)
                                     p_x_perc = round(p_x / patient_img.shape[2], 4)
 
-                                    #p_x,p_y,slice_num = helpers.percentage_to_pixels(p_x_perc, p_y_perc, p_z_perc, patient_img)
-                                    #src_img_paths = settings.NDSB3_EXTRACTED_IMAGE_DIR + patient_id + "/" + "img_" + str(
-                                    #    slice_num).rjust(4, '0') + "_i.png"
-                                    #print(settings.NDSB3_EXTRACTED_IMAGE_DIR + patient_id + "/" + "img_" + str(
-                                    #    slice_num).rjust(4, '0') + "_i.png")
-                                    #slice_img = cv2.imread(src_img_paths, cv2.IMREAD_GRAYSCALE)
-                                    #xymax = (int(p_x + diameter_mm / 2), int(p_y + diameter_mm / 2))
-                                    #xymin = (int(p_x - diameter_mm / 2), int(p_y - diameter_mm / 2))
-                                    #colorRGB = (255, 255, 0)
-                                    #print(xymin, xymax, diameter_mm)
-                                    #gray_BGR = cv2.cvtColor(slice_img, cv2.COLOR_GRAY2BGR)
-                                    #image = cv2.rectangle(gray_BGR, xymin, xymax, colorRGB, 1)
-                                    #cv2.imwrite(dst_dir + "/Annotation_V2/" + "Positive_nodule_" + str(
-                                    #    nodule_chance) + patient_id + "__" + str(annotation_index) + "__" + str(
-                                    #    iteration) + ".png", image)
+                                    p_x,p_y,slice_num = helpers.percentage_to_pixels(p_x_perc, p_y_perc, p_z_perc, patient_img)
+                                    src_img_paths = settings.LIDC_EXTRACTED_IMAGE_DIR + patient_id + "/" + "img_" + str(
+                                        slice_num).rjust(4, '0') + "_i.png"
+                                    print(settings.LIDC_EXTRACTED_IMAGE_DIR + patient_id + "/" + "img_" + str(
+                                        slice_num).rjust(4, '0') + "_i.png")
+                                    slice_img = cv2.imread(src_img_paths, cv2.IMREAD_GRAYSCALE)
+                                    xymax = (int(p_x + diameter_mm / 2), int(p_y + diameter_mm / 2))
+                                    xymin = (int(p_x - diameter_mm / 2), int(p_y - diameter_mm / 2))
+                                    colorRGB = (255, 255, 0)
+                                    print(xymin, xymax, diameter_mm)
+                                    gray_BGR = cv2.cvtColor(slice_img, cv2.COLOR_GRAY2BGR)
+                                    image = cv2.rectangle(gray_BGR, xymin, xymax, colorRGB, 1)
+                                    if not os.path.exists(dst_dir + "/"+str(patient_id)):
+                                        os.makedirs(dst_dir + "/"+str(patient_id))
+                                    cv2.imwrite(dst_dir + "/"+str(patient_id)+"/" + "Positive_nodule_" + str(
+                                        nodule_chance) + patient_id + "__" + str(annotation_index) + "__" + str(
+                                        iteration) + ".png", image)
 
                                     # diameter_perc = round(2 * step / patient_img.shape[2], 4)
+                                    nod_id = -1
                                     status = ""
                                     if evaluate:
                                         status = "FP"
-                                        for tx,ty,tz in zip(gt_x,gt_y,gt_z):
-                                            dx = abs(p_x_perc - tx)
-                                            dy = abs(p_y_perc - ty)
-                                            dz = abs(p_z_perc - tz)
-                                            if dx < 0.07 and dy < 0.07 and dz < 0.07:
+                                        for Id, nodule_n in enumerate(unique_nodules):
+                                            if (nodule_n[0] < p_x_perc + diameter_mm_perc) and (nodule_n[0] > p_x_perc - diameter_mm_perc):
+                                                if (nodule_n[1] < p_y_perc + diameter_mm_perc) and (nodule_n[1] > p_y_perc - diameter_mm_perc):
+                                                    if (nodule_n[2] < p_z_perc + diameter_mm_perc) and (
+                                                            nodule_n[2] > p_z_perc - diameter_mm_perc):
+                                                        status = "TP"
+                                                        nod_id = Id
+                                                        break
+                                            """            
+                                            dx = abs(p_x_perc - nodule_n[0])
+                                            dy = abs(p_y_perc - nodule_n[1])
+                                            dz = abs(p_z_perc - nodule_n[2])
+                                            euclidean_distance = math.sqrt(
+                                                dx ** 2 + dy ** 2 + dz ** 2)
+                                            if euclidean_distance < 0.03:
                                                 status = "TP"
                                                 break
+                                            else:
+                                                print("False Positive Nodule, distance from nodule: ", nodule_n, "\tequal: ", euclidean_distance)
+                                            """
                                     nodule_chance = round(nodule_chance, 4)
                                     #helpers.save_cube_img(dst_dir + "Positive_nodule_" + str(nodule_chance) +  patient_id + "__" + str(annotation_index) + "__" + str(
                                      #       iteration) + ".png", cube_img, 4, 8)
-                                    patient_predictions_csv_line = [annotation_index, p_x_perc, p_y_perc, p_z_perc, nodule_chance,status]
+                                    patient_predictions_csv_line = [annotation_index, p_x_perc, p_y_perc, p_z_perc, nodule_chance,status,nod_id]
                                     patient_predictions_csv.append(patient_predictions_csv_line)
                                     all_predictions_csv.append([patient_id] + patient_predictions_csv_line)
                                     annotation_index += 1
@@ -245,6 +265,11 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
             TP = FP = 0
             unique_nodules_2 = []
             for row in patient_predictions_csv:
+                if row[5] == "TP" and row[6] not in unique_nodules_2:
+                    unique_nodules_2.append(row[6])
+                    TP += 1
+                FP += 1 if row[5] == "FP" else 0
+                """
                 exist = False
                 tx = row[1]
                 ty = row[2]
@@ -261,7 +286,7 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                     unique_nodules_2.append([tx, ty, tz])
                     TP += 1 if row[5] == "TP" else 0
                     FP += 1 if row[5] == "FP" else 0
-
+                """
             FN = len(unique_nodules) - TP
             TN = done_count - FP
             if TP != 0:
@@ -275,13 +300,13 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                 specificity = 0
             print("Specificity: ",specificity)
             all_metric.append([patient_id,FP,FN,TP,TN,sensitivity,specificity])
-        df = pandas.DataFrame(patient_predictions_csv, columns=["anno_index", "coord_x", "coord_y", "coord_z", "nodule_chance","status"])
+        df = pandas.DataFrame(patient_predictions_csv, columns=["anno_index", "coord_x", "coord_y", "coord_z", "nodule_chance","status","nodule_id"])
         df.to_csv(csv_target_path, index=False)
         print(predict_volume.mean())
         print("Done in : ", sw.get_elapsed_seconds(), " seconds")
     df = pandas.DataFrame(all_predictions_csv,
                           columns=["patient_id", "anno_index", "coord_x", "coord_y", "coord_z", "nodule_chance",
-                                   "status"])
+                                   "status","nodule_id"])
     df.to_csv(settings.LIDC_PREDICTION_DIR + "Detected_Nodules_All_Test_Candidates.csv", index=False)
     if evaluate:
         total_FP = total_FN =total_TP = total_TN = total_sens = total_spec =0
@@ -310,8 +335,9 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
 if __name__ == "__main__":
 
     CONTINUE_JOB = False
+    #only_patient_id = "1.3.6.1.4.1.14519.5.2.1.6279.6001.330643702676971528301859647742"
+    only_patient_id = "1.3.6.1.4.1.14519.5.2.1.6279.6001.178391668569567816549737454720"
     only_patient_id = None
-
     if not CONTINUE_JOB or only_patient_id is not None:
         for file_path in glob.glob("c:/tmp/*.*"):
             if not os.path.isdir(file_path):
@@ -326,5 +352,5 @@ if __name__ == "__main__":
 
     if True:
         for magnification in [1]:  #
-            predict_cubes("models/model_luna16_full__fs_best.hd5", CONTINUE_JOB, only_patient_id=only_patient_id, magnification=magnification, flip=False, ext_name="luna16_fs")
+            predict_cubes("models/model_luna16_full__fs_best.hd5_", CONTINUE_JOB, only_patient_id=only_patient_id, magnification=magnification, flip=False, ext_name="luna16_fs")
             #predict_cubes("models/model_luna16_full__fs_best.hd5", CONTINUE_JOB, only_patient_id=only_patient_id, magnification=magnification, flip=False, train_data=False, holdout_no=None, ext_name="luna16_fs")
