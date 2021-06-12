@@ -58,9 +58,14 @@ def make_annotation_images_lidc(compined_list):
         coord_x = int(row["coord_x"] * images.shape[2])
         coord_y = int(row["coord_y"] * images.shape[1])
         coord_z = int(row["coord_z"] * images.shape[0])
-        malscore = int(row["malscore"])
         anno_index = row["anno_index"]
         anno_index = str(anno_index).replace(" ", "xspacex").replace(".", "xpointx").replace("_", "xunderscorex")
+
+        if row["diameter"] != 0:
+            diameter = int(row["diameter"] * images.shape[1])
+        else:
+            diameter = 2
+
         cube_img = get_cube_from_img(images, coord_x, coord_y, coord_z, 64)
         if cube_img.sum() < 5:
             print(" ***** Skipping ", coord_x, coord_y, coord_z)
@@ -73,7 +78,7 @@ def make_annotation_images_lidc(compined_list):
             print(" ***** incorrect shape !!! ", str(anno_index), " - ",(coord_x, coord_y, coord_z))
             continue
 
-        save_cube_img(dst_dir + patient_id + "_" + str(anno_index) + "_" + str(malscore * malscore) + "_1_pos.png", cube_img, 8, 8)
+        save_cube_img(dst_dir + patient_id + "_" + str(anno_index) + "_" + str(diameter) + "_1_pos.png", cube_img, 8, 8)
     helpers.print_tabbed([patient_index, patient_id, len(df_annos)], [5, 64, 8])
 
 def make_annotation_images_lndb(compined_list):
@@ -213,9 +218,9 @@ if __name__ == "__main__":
     if not os.path.exists(settings.BASE_DIR_SSD + "generated_traindata2/"):
         os.mkdir(settings.BASE_DIR_SSD + "generated_traindata2/")
 
-    if False:
+    if True:
         make_annotation_images_lidc_p()
     if False:
         make_candidate_auto_images_p(["falsepos", "edge", "luna"])
-    if True:
+    if False:
         make_annotation_images_lndb_p()

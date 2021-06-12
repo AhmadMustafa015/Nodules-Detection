@@ -118,7 +118,7 @@ def load_lidc_xml(xml_path, agreement_threshold=0, only_patient=None, save_nodul
             y_center_perc = round(y_center / img_array.shape[1], 4)
             z_center_perc = round(z_center / img_array.shape[0], 4)
             diameter = max(x_diameter, y_diameter)
-            diameter_perc = round(max(x_diameter / img_array.shape[2], y_diameter / img_array.shape[1]), 4)
+            diameter_perc = round(y_diameter / img_array.shape[1], 4)
             diameter_perc_x = round(x_diameter / img_array.shape[2])
             diameter_perc_y = round(y_diameter / img_array.shape[1])
             if nodule.characteristics is None:
@@ -864,7 +864,7 @@ def process_lidc_annotations(only_patient=None, agreement_threshold=0):
 
 
 if __name__ == "__main__":
-    if True:
+    if False:
         print("step 1 Process images...")
         # only_process_patient = "1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860"
         process_images(delete_existing=False, only_process_patient=None)
@@ -872,7 +872,7 @@ if __name__ == "__main__":
             df_annos = pandas.DataFrame(slices_thick_info,columns=["patient_id", "slice_thickness"])
             df_annos.to_csv(settings.BASE_DIR + "slices_thickness.csv", index=False)
 
-    if False:
+    if True:
         print("step 2 Process LIDC annotation...")
         process_lidc_annotations(only_patient=None, agreement_threshold=0)
     if False:

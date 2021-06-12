@@ -238,7 +238,7 @@ def get_net(input_shape=(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE, 1), load_weight_path=N
         x = Dropout(p=0.5)(x)
 
     last64 = Conv3D(64, kernel_size=(2, 2, 2), activation="relu", name="last_64")(x)
-    out_diameter = Conv3D(1, kernel_size=(1, 1, 1), activation="sigmoid", name="out_class_last")(last64)
+    out_diameter = Conv3D(1, kernel_size=(1, 1, 1), activation=None, name="out_diameter_last")(last64)
     out_diameter = Flatten(name="out_diameter")(out_diameter)
 
     out_centerX = Conv3D(1, kernel_size=(1, 1, 1), activation=None, name="out_centerX_last")(last64)
@@ -253,7 +253,7 @@ def get_net(input_shape=(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE, 1), load_weight_path=N
     model = Model(inputs=inputs, outputs=[out_diameter, out_centerX, out_centerY, out_centerZ])
     if load_weight_path is not None:
         model.load_weights(load_weight_path, by_name=False)
-    model.compile(optimizer=SGD(lr=LEARN_RATE, momentum=0.9, nesterov=True), loss={"out_diameter": "binary_crossentropy", "out_centerY": mean_absolute_error,"out_centerX": mean_absolute_error,"out_centerZ": mean_absolute_error}, metrics={"out_diameter": [binary_accuracy, binary_crossentropy], "out_centerZ": mean_absolute_error,"out_centerY": mean_absolute_error,"out_centerX": mean_absolute_error})
+    model.compile(optimizer=SGD(lr=LEARN_RATE, momentum=0.9, nesterov=True), loss={"out_diameter": mean_absolute_error, "out_centerY": mean_absolute_error,"out_centerX": mean_absolute_error,"out_centerZ": mean_absolute_error}, metrics={"out_diameter": mean_absolute_error, "out_centerZ": mean_absolute_error,"out_centerY": mean_absolute_error,"out_centerX": mean_absolute_error})
 
     if features:
         model = Model(inputs=inputs, outputs=[last64])
@@ -271,7 +271,7 @@ def step_decay(epoch):
 
 
 def train(model_name, fold_count, train_full_set=False, load_weights_path=None, ndsb3_holdout=0, manual_labels=True):
-    batch_size = 16
+    batch_size = 200
     train_files, holdout_files = get_train_holdout_files(train_percentage=80, ndsb3_holdout=ndsb3_holdout, manual_labels=manual_labels, full_luna_set=train_full_set, fold_count=fold_count)
     print(holdout_files)
 
@@ -362,7 +362,7 @@ if __name__ == "__main__":
     if True:
         if not os.path.exists("workdir_loc/"):
             os.mkdir("workdir_loc")
-        train(train_full_set=True, load_weights_path=None, model_name="lidc_loc", fold_count=-1, manual_labels=False)
+        train(train_full_set=True, load_weights_path="models/model_luna16_full__fs_best.hd5", model_name="lidc_loc", fold_count=-1, manual_labels=False)
         if not os.path.exists("models/"):
             os.mkdir("models")
         shutil.copy("workdir/model_lidc_loc__fs_best.hd5", "models/model_lidc_loc__fs_best.hd5")
