@@ -94,6 +94,10 @@ def make_annotation_images_lndb(compined_list):
         coord_y = int(row["coord_y"] * images.shape[1])
         coord_z = int(row["coord_z"] * images.shape[0])
         anno_index = row["anno_index"]
+        if row["diameter"] !=0:
+            diameter = int(row["diameter"] * images.shape[1])
+        else:
+            diameter = 2
         anno_index = str(anno_index).replace(" ", "xspacex").replace(".", "xpointx").replace("_", "xunderscorex")
         cube_img = get_cube_from_img(images, coord_x, coord_y, coord_z, 64)
         if cube_img.sum() < 5:
@@ -107,7 +111,7 @@ def make_annotation_images_lndb(compined_list):
             print(" ***** incorrect shape !!! ", str(anno_index), " - ",(coord_x, coord_y, coord_z))
             continue
 
-        save_cube_img(dst_dir + patient_id + "_" + str(anno_index) + "_" + str(0) + "_1_pos.png", cube_img, 8, 8)
+        save_cube_img(dst_dir + patient_id + "_" + str(anno_index) + "_" + str(diameter) + "_1_pos.png", cube_img, 8, 8)
     helpers.print_tabbed([patient_index, patient_id, len(df_annos)], [5, 64, 8])
 
 def make_candidate_auto_images(compined_list):
