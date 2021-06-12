@@ -10,7 +10,7 @@ import cv2
 import numpy
 from tensorflow.keras import backend as K
 import math
-
+import matplotlib.pyplot as plt
 
 # limit memory usage..
 import tensorflow as tf
@@ -41,7 +41,59 @@ def prepare_image_for_net3D(img):
     img = img.reshape(1, img.shape[0], img.shape[1], img.shape[2], 1)
     return img
 
+def filter_patient_nodules_predictions(df_nodule_predictions: pandas.DataFrame, patient_id, view_size, luna16=False):
+    src_dir = settings.LIDC_EXTRACTED_IMAGE_DIR
+    patient_mask = helpers.load_patient_images(patient_id, src_dir, "*_m.png")
+    delete_indices = []
+    for index, row in df_nodule_predictions.iterrows():
+        z_perc = row["coord_z"]
+        y_perc = row["coord_y"]
+        center_x = int(round(row["coord_x"] * patient_mask.shape[2]))
+        center_y = int(round(y_perc * patient_mask.shape[1]))
+        center_z = int(round(z_perc * patient_mask.shape[0]))
+        start_y = center_y - view_size / 2
+        start_x = center_x - view_size / 2
+        nodule_in_mask = False
+        for z_index in [-1, 0, 1]:
+            #try:
+            img = patient_mask[z_index + center_z]
+            #except:
+            #    print("Warning: Nodule outside image area")
+            #    continue
+            start_x = int(start_x)
+            start_y = int(start_y)
+            view_size = int(view_size)
+            img_roi = img[start_y:start_y+view_size, start_x:start_x + view_size]
+            if img_roi.sum() > 255:  # more than 1 pixel of mask.
+                nodule_in_mask = True
 
+        if not nodule_in_mask:
+            print("Nodule not in mask: ", (center_x, center_y, center_z))
+            delete_indices.append(index)
+        else:
+            if center_z < 30:
+                print("Z < 30: ", patient_id, " center z:", center_z, " y_perc: ",  y_perc)
+
+            if (z_perc > 0.75 or z_perc < 0.25) and y_perc > 0.85:
+                print("SUSPICIOUS FALSEPOSITIVE: ", patient_id, " center z:", center_z, " y_perc: ",  y_perc)
+                delete_indices.append(index)
+            if center_z < 50 and y_perc < 0.30:
+                print("SUSPICIOUS FALSEPOSITIVE OUT OF RANGE: ", patient_id, " center z:", center_z, " y_perc: ",  y_perc)
+                delete_indices.append(index)
+
+    df_nodule_predictions.drop(df_nodule_predictions.index[delete_indices], inplace=True)
+    return df_nodule_predictions
+def filter_nodule_predictions(only_patient_id=None):
+    src_dir = settings.NDSB3_NODULE_DETECTION_DIR
+    for csv_index, csv_path in enumerate(glob.glob(src_dir + "*.csv")):
+        file_name = ntpath.basename(csv_path)
+        patient_id = file_name.replace(".csv", "")
+        print(csv_index, ": ", patient_id)
+        if only_patient_id is not None and patient_id != only_patient_id:
+            continue
+        df_nodule_predictions = pandas.read_csv(csv_path)
+        filter_patient_nodules_predictions(df_nodule_predictions, patient_id, CUBE_SIZE)
+        df_nodule_predictions.to_csv(csv_path, index=False)
 def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, magnification=1, flip=False, ext_name="",input_format = "dicom",evaluate = True):
     # choose which directory you should store output at
     dst_dir = settings.LIDC_PREDICTION_DIR
@@ -114,9 +166,12 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
         if magnification != 1:
             patient_mask = helpers.rescale_patient_images(patient_mask, (1, 1, 1), magnification, is_mask_image=True)
 
-            # patient_img = patient_img[:, ::-1, :]
-            # patient_mask = patient_mask[:, ::-1, :]
-
+        #plt.imshow(patient_img[100,:,:], cmap='gray', vmin=0, vmax=255)
+        #plt.show()
+        #patient_img = patient_img[:, ::-1, :]
+        #patient_mask = patient_mask[:, ::-1, :]
+        #plt.imshow(patient_img[100, :, :], cmap='gray', vmin=0, vmax=255)
+        #plt.show()
         step = PREDICT_STEP
         CROP_SIZE = CUBE_SIZE
         # CROP_SIZE = 48
@@ -211,6 +266,7 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                                     print(settings.LIDC_EXTRACTED_IMAGE_DIR + patient_id + "/" + "img_" + str(
                                         slice_num).rjust(4, '0') + "_i.png")
                                     slice_img = cv2.imread(src_img_paths, cv2.IMREAD_GRAYSCALE)
+                                    slice_img = cv2.rotate(slice_img, cv2.ROTATE_180)
                                     xymax = (int(p_x + diameter_mm / 2), int(p_y + diameter_mm / 2))
                                     xymin = (int(p_x - diameter_mm / 2), int(p_y - diameter_mm / 2))
                                     colorRGB = (255, 255, 0)
@@ -261,14 +317,19 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                     if done_count % 10000 == 0:
                         print("Done: ", done_count, " skipped:", skipped_count)
                     iteration = iteration + 1
+        df = pandas.DataFrame(patient_predictions_csv, columns=["anno_index", "coord_x", "coord_y", "coord_z", "nodule_chance","status","nodule_id"])
+        print(df.shape)
+        df = filter_patient_nodules_predictions(df, patient_id, CROP_SIZE * magnification)
+        print(df.shape)
+        df.to_csv(csv_target_path, index=False)
         if evaluate:
             TP = FP = 0
             unique_nodules_2 = []
-            for row in patient_predictions_csv:
-                if row[5] == "TP" and row[6] not in unique_nodules_2:
+            for index, row in df.iterrows():
+                if row['status'] == "TP" and row['nodule_id'] not in unique_nodules_2:
                     unique_nodules_2.append(row[6])
                     TP += 1
-                FP += 1 if row[5] == "FP" else 0
+                FP += 1 if row['status'] == "FP" else 0
                 """
                 exist = False
                 tx = row[1]
@@ -300,8 +361,6 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                 specificity = 0
             print("Specificity: ",specificity)
             all_metric.append([patient_id,FP,FN,TP,TN,sensitivity,specificity])
-        df = pandas.DataFrame(patient_predictions_csv, columns=["anno_index", "coord_x", "coord_y", "coord_z", "nodule_chance","status","nodule_id"])
-        df.to_csv(csv_target_path, index=False)
         print(predict_volume.mean())
         print("Done in : ", sw.get_elapsed_seconds(), " seconds")
     df = pandas.DataFrame(all_predictions_csv,
@@ -336,8 +395,8 @@ if __name__ == "__main__":
 
     CONTINUE_JOB = False
     #only_patient_id = "1.3.6.1.4.1.14519.5.2.1.6279.6001.330643702676971528301859647742"
-    only_patient_id = "1.3.6.1.4.1.14519.5.2.1.6279.6001.178391668569567816549737454720"
-    only_patient_id = None
+    only_patient_id = "1.3.6.1.4.1.14519.5.2.1.6279.6001.110499927630654433643791451680"
+    #only_patient_id = None
     if not CONTINUE_JOB or only_patient_id is not None:
         for file_path in glob.glob("c:/tmp/*.*"):
             if not os.path.isdir(file_path):
