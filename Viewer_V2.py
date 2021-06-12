@@ -880,9 +880,9 @@ class MainWindow(ttk.Frame):
             fldr = scan_folder
         else:
             fldr = "No dicom file loaded"
-        l = tk.Label(self.master, text=fldr, fg="black", font=26)
+        l = tk.Label(self.master, text=fldr, fg="black", font=10)
         self.canvas_class.update_folder_label(l)
-        l.grid(row=0, column=0,columnspan=12,sticky=W)
+        l.grid(row=0, column=0,columnspan=6,sticky=W)
 
         self.master.rowconfigure(0, weight=1)  # make canvas expandable
         self.master.columnconfigure(0, weight=1)
@@ -993,5 +993,8 @@ filename = "C:/tmp/first/radiologicsmedical.png"  # place path to your image her
 if not os.path.exists("viewer/"):
         os.mkdir("viewer/")
 app = MainWindow(tk.Tk(), path=filename)
+
+
+
 
 app.mainloop()
