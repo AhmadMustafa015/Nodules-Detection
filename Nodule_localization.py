@@ -22,7 +22,7 @@ import shutil
 import datetime
 
 
-
+print("Here")
 # limit memory usage..
 import tensorflow as tf
 from tensorflow.compat.v1.keras.backend import set_session
@@ -114,7 +114,7 @@ def get_train_holdout_files(fold_count, train_percentage=85, test_percentage=5, 
             parts = file_name.split("_")
 
             class_label = int(parts[-2])
-            size_label = int(parts[-3])
+            size_label = int(parts[-3]) / 32.0
             #TODO: double check
             assert class_label == 1
             assert parts[-1] == "pos.png"
@@ -240,7 +240,7 @@ def get_net(input_shape=(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE, 1), load_weight_path=N
         x = Dropout(p=0.5)(x)
 
     last64 = Conv3D(64, kernel_size=(2, 2, 2), activation="relu", name="last_64")(x)
-    out_diameter = Conv3D(1, kernel_size=(1, 1, 1), activation="sigmoid", name="out_class_last")(last64)
+    out_diameter = Conv3D(1, kernel_size=(1, 1, 1), activation="sigmoid", name="out_diameter_last")(last64)
     out_diameter = Flatten(name="out_diameter")(out_diameter)
 
     out_centerX = Conv3D(1, kernel_size=(1, 1, 1), activation=None, name="out_centerX_last")(last64)
@@ -289,7 +289,16 @@ def train(model_name, fold_count, train_full_set=False, load_weights_path=None, 
         cube_img += MEAN_PIXEL_VALUE
         # helpers.save_cube_img("c:/tmp/img_" + str(i) + ".png", cube_img, 4, 8)
         # print(tmp)
-
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        # Restrict TensorFlow to only use the first GPU
+        try:
+            tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
+            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPU")
+        except RuntimeError as e:
+            # Visible devices must be set before GPUs have been initialized
+            print(e)
     learnrate_scheduler = LearningRateScheduler(step_decay)
     model = get_net(load_weight_path=load_weights_path)
     holdout_txt = "_h" + str(ndsb3_holdout) if manual_labels else ""
@@ -306,7 +315,7 @@ def train(model_name, fold_count, train_full_set=False, load_weights_path=None, 
     tensorboard_callback = TensorBoard(log_dir=logdir, histogram_freq=1)
     #tensorboard_callback,
     call_back = [tensorboard_callback, checkpoint, checkpoint_fixed_name, learnrate_scheduler]
-    model.fit(train_gen,steps_per_epoch =  len(train_files) / batch_size,epochs = 25, validation_data=holdout_gen, validation_steps=len(holdout_files) / batch_size, callbacks= call_back)
+    model.fit(train_gen,steps_per_epoch =  len(train_files) / batch_size,epochs = 25, validation_data=holdout_gen, validation_steps=len(holdout_files) / batch_size, callbacks= call_back,workers=1)
 
     model.save(os.path.join("workdir_loc\\model_" + model_name + "_" + holdout_txt + "_end.hd5"))
 

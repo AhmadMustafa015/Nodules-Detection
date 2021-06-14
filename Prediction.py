@@ -411,5 +411,5 @@ if __name__ == "__main__":
 
     if True:
         for magnification in [1]:  #
-            predict_cubes("models/model_luna16_full__fs_best.hd5_", CONTINUE_JOB, only_patient_id=only_patient_id, magnification=magnification, flip=False, ext_name="luna16_fs")
+            predict_cubes("models/model_luna16_full__fs_best.hd5", CONTINUE_JOB, only_patient_id=only_patient_id, magnification=magnification, flip=False, ext_name="luna16_fs")
             #predict_cubes("models/model_luna16_full__fs_best.hd5", CONTINUE_JOB, only_patient_id=only_patient_id, magnification=magnification, flip=False, train_data=False, holdout_no=None, ext_name="luna16_fs")
