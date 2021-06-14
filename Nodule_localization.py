@@ -166,7 +166,7 @@ def data_generator(batch_size, record_list, train_set):
             indent_x = int(indent_x)
             indent_y = int(indent_y)
             indent_z = int(indent_z)
-            center_x = center_y = center_z = CROP_SIZE/2
+            center_x = center_y = center_z = CROP_SIZE
             cube_image = cube_image[indent_z:indent_z + CROP_SIZE, indent_y:indent_y + CROP_SIZE, indent_x:indent_x + CROP_SIZE]
             center_x = center_x - indent_x
             center_y = center_y - indent_y
@@ -205,8 +205,10 @@ def data_generator(batch_size, record_list, train_set):
                 y_centerZ = numpy.vstack(center_list_z)
                 yield x, {"out_diameter": y_size, "out_centerX": y_centerX, "out_centerY": y_centerY, "out_centerZ": y_centerZ}
                 img_list = []
-                class_list = []
-                center_list = []
+                center_list_x = []
+                size_list = []
+                center_list_y = []
+                center_list_z = []
                 batch_idx = 0
 
 
