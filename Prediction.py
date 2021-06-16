@@ -30,7 +30,8 @@ MEAN_PIXEL_VALUE = settings.MEAN_PIXEL_VALUE_NODULE
 NEGS_PER_POS = 20
 P_TH = 0.6
 
-PREDICT_STEP = 12
+PREDICT_STEP = 6
+PREDICT_STEP_Z = 1
 USE_DROPOUT = False
 
 
@@ -180,15 +181,19 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
         for dim in range(3):
             dim_indent = 0
             while dim_indent + CROP_SIZE < patient_img.shape[dim]:
-                predict_volume_shape_list[dim] += 1
-                dim_indent += step
+                if dim == 0:
+                    predict_volume_shape_list[dim] += 1
+                    dim_indent += PREDICT_STEP_Z
+                else:
+                    predict_volume_shape_list[dim] += 1
+                    dim_indent += step
 
         predict_volume_shape = (predict_volume_shape_list[0], predict_volume_shape_list[1], predict_volume_shape_list[2])
         predict_volume = numpy.zeros(shape=predict_volume_shape, dtype=float)
         print("Predict volume shape: ", predict_volume.shape)
         done_count = 0
         skipped_count = 0
-        batch_size = 128
+        batch_size = 512
         batch_list = []
         batch_list_coords = []
         patient_predictions_csv = []
@@ -215,8 +220,8 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
             for y in range(0, predict_volume_shape[1]):
                 for x in range(0, predict_volume_shape[2]):
                     #if cube_img is None:
-                    cube_img = patient_img[z * step:z * step+CROP_SIZE, y * step:y * step + CROP_SIZE, x * step:x * step+CROP_SIZE]
-                    cube_mask = patient_mask[z * step:z * step+CROP_SIZE, y * step:y * step + CROP_SIZE, x * step:x * step+CROP_SIZE]
+                    cube_img = patient_img[z * PREDICT_STEP_Z:z * PREDICT_STEP_Z+CROP_SIZE, y * step:y * step + CROP_SIZE, x * step:x * step+CROP_SIZE]
+                    cube_mask = patient_mask[z * PREDICT_STEP_Z:z * PREDICT_STEP_Z+CROP_SIZE, y * step:y * step + CROP_SIZE, x * step:x * step+CROP_SIZE]
 
                     if cube_mask.sum() < 2000:
                         skipped_count += 1
@@ -248,11 +253,11 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                                 print("nodule_chance:", nodule_chance)
                                 predict_volume[p_z, p_y, p_x] = nodule_chance
                                 if nodule_chance > P_TH:
-                                    p_z = p_z * step + CROP_SIZE / 2
+                                    p_z = p_z * PREDICT_STEP_Z + CROP_SIZE / 2
                                     p_y = p_y * step + CROP_SIZE / 2
                                     p_x = p_x * step + CROP_SIZE / 2
                                     #diameter_mm = round(p[1][i][0], 4)
-                                    diameter_mm = 32.0
+                                    diameter_mm = 6.0
                                     diameter_mm_perc = round(diameter_mm / max(patient_img.shape[1],patient_img.shape[2]), 4)
                                     #print (patient_img.shape[0], patient_img.shape[1], patient_img.shape[2])
 

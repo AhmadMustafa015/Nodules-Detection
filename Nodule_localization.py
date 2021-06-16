@@ -172,7 +172,7 @@ def data_generator(batch_size, record_list, train_set):
             center_x = center_x - indent_x
             center_y = center_y - indent_y
             center_z = center_z - indent_z
-            print(center_z)
+            #print(center_z)
             if normalizeNetwork:
                 center_x /= 32.0
                 center_y /= 32.0
