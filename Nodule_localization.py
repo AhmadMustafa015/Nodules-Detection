@@ -44,7 +44,7 @@ P_TH = 0.6
 LEARN_RATE = 0.001
 
 USE_DROPOUT = False
-
+normalizeNetwork = False
 def prepare_image_for_net3D(img):
     img = img.astype(numpy.float32)
     img -= MEAN_PIXEL_VALUE
@@ -65,6 +65,7 @@ def get_train_holdout_files(fold_count, train_percentage=85, test_percentage=5, 
     number_of_test = 0
     pos_samples_test = []
     while number_of_test < test_pos_count:
+        break
         index = random.randint(0,len(pos_samples))
         test_case = pos_samples[index]
         file_name = ntpath.basename(test_case)
@@ -171,6 +172,11 @@ def data_generator(batch_size, record_list, train_set):
             center_x = center_x - indent_x
             center_y = center_y - indent_y
             center_z = center_z - indent_z
+            print(center_z)
+            if normalizeNetwork:
+                center_x /= 32.0
+                center_y /= 32.0
+                center_z /= 32.0
             if CROP_SIZE != CUBE_SIZE:
                 cube_image = helpers.rescale_patient_images2(cube_image, (CUBE_SIZE, CUBE_SIZE, CUBE_SIZE))
             assert cube_image.shape == (CUBE_SIZE, CUBE_SIZE, CUBE_SIZE)
@@ -203,7 +209,8 @@ def data_generator(batch_size, record_list, train_set):
                 y_centerX = numpy.vstack(center_list_x)
                 y_centerY = numpy.vstack(center_list_y)
                 y_centerZ = numpy.vstack(center_list_z)
-                yield x, {"out_diameter": y_size, "out_centerX": y_centerX, "out_centerY": y_centerY, "out_centerZ": y_centerZ}
+                #yield x, {"out_diameter": y_size, "out_centerX": y_centerX, "out_centerY": y_centerY, "out_centerZ": y_centerZ}
+                yield x, {"out_centerZ": y_centerZ}
                 img_list = []
                 center_list_x = []
                 size_list = []
@@ -240,22 +247,41 @@ def get_net(input_shape=(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE, 1), load_weight_path=N
         x = Dropout(p=0.5)(x)
 
     last64 = Conv3D(64, kernel_size=(2, 2, 2), activation="relu", name="last_64")(x)
-    out_diameter = Conv3D(1, kernel_size=(1, 1, 1), activation="sigmoid", name="out_diameter_last")(last64)
-    out_diameter = Flatten(name="out_diameter")(out_diameter)
+    #out_diameter = Conv3D(1, kernel_size=(1, 1, 1), activation="sigmoid", name="out_diameter_last")(last64)
+    #out_diameter = Flatten(name="out_diameter")(out_diameter)
 
-    out_centerX = Conv3D(1, kernel_size=(1, 1, 1), activation=None, name="out_centerX_last")(last64)
-    out_centerX = Flatten(name="out_centerX")(out_centerX)
+    if normalizeNetwork:
+        #out_centerX = Conv3D(1, kernel_size=(1, 1, 1), activation="sigmoid", name="out_centerX_last")(last64)
+        #out_centerX = Flatten(name="out_centerX")(out_centerX)
 
-    out_centerY = Conv3D(1, kernel_size=(1, 1, 1), activation=None, name="out_centerY_last")(last64)
-    out_centerY = Flatten(name="out_centerY")(out_centerY)
+        #out_centerY = Conv3D(1, kernel_size=(1, 1, 1), activation="sigmoid", name="out_centerY_last")(last64)
+        #out_centerY = Flatten(name="out_centerY")(out_centerY)
 
-    out_centerZ = Conv3D(1, kernel_size=(1, 1, 1), activation=None, name="out_centerZ_last")(last64)
-    out_centerZ = Flatten(name="out_centerZ")(out_centerZ)
+        out_centerZ = Conv3D(1, kernel_size=(1, 1, 1), activation="sigmoid", name="out_centerZ_last")(last64)
+        out_centerZ = Flatten(name="out_centerZ")(out_centerZ)
+    else:
+        #out_centerX = Conv3D(1, kernel_size=(1, 1, 1), activation="sigmoid", name="out_centerX_last")(last64)
+        #out_centerX = Flatten(name="out_centerX")(out_centerX)
 
-    model = Model(inputs=inputs, outputs=[out_diameter, out_centerX, out_centerY, out_centerZ])
+        #out_centerY = Conv3D(1, kernel_size=(1, 1, 1), activation="sigmoid", name="out_centerY_last")(last64)
+        #out_centerY = Flatten(name="out_centerY")(out_centerY)
+
+        out_centerZ = Conv3D(1, kernel_size=(1, 1, 1), activation="sigmoid", name="out_centerZ_last")(last64)
+        out_centerZ = Flatten(name="out_centerZ")(out_centerZ)
+
+    #model = Model(inputs=inputs, outputs=[out_diameter, out_centerX, out_centerY, out_centerZ])
+    model = Model(inputs=inputs, outputs=[out_centerZ])
     if load_weight_path is not None:
         model.load_weights(load_weight_path, by_name=False)
-    model.compile(optimizer=SGD(lr=LEARN_RATE, momentum=0.9, nesterov=True), loss={"out_diameter": "binary_crossentropy", "out_centerY": mean_absolute_error,"out_centerX": mean_absolute_error,"out_centerZ": mean_absolute_error}, metrics={"out_diameter": [binary_accuracy, binary_crossentropy], "out_centerZ": mean_absolute_error,"out_centerY": mean_absolute_error,"out_centerX": mean_absolute_error})
+    if normalizeNetwork:
+        model.compile(optimizer=SGD(lr=LEARN_RATE, momentum=0.9, nesterov=True), loss={"out_centerZ": "binary_crossentropy"}, metrics={"out_centerZ": [binary_accuracy, binary_crossentropy]})
+
+        #model.compile(optimizer=SGD(lr=LEARN_RATE, momentum=0.9, nesterov=True), loss={"out_diameter": "binary_crossentropy", "out_centerY": "binary_crossentropy","out_centerX": "binary_crossentropy","out_centerZ": "binary_crossentropy"}, metrics={"out_diameter": [binary_accuracy, binary_crossentropy], "out_centerZ": [binary_accuracy, binary_crossentropy],"out_centerY": [binary_accuracy, binary_crossentropy],"out_centerX": [binary_accuracy, binary_crossentropy]})
+    else:
+        #model.compile(optimizer=SGD(lr=LEARN_RATE, momentum=0.9, nesterov=True), loss={"out_diameter": "binary_crossentropy", "out_centerY": mean_absolute_error,"out_centerX": mean_absolute_error,"out_centerZ": mean_absolute_error}, metrics={"out_diameter": [binary_accuracy, binary_crossentropy], "out_centerZ": mean_absolute_error,"out_centerY": mean_absolute_error,"out_centerX": mean_absolute_error})
+        model.compile(optimizer=SGD(lr=LEARN_RATE, momentum=0.9, nesterov=True),
+                      loss={"out_centerZ": mean_absolute_error},
+                      metrics={"out_centerZ": mean_absolute_error})
 
     if features:
         model = Model(inputs=inputs, outputs=[last64])
@@ -371,6 +397,7 @@ def compute_class_sens_spec(pred, label):
 
 if __name__ == "__main__":
     if True:
+        pre_trained = "F:/Cengiz/Nodules-Detection/models/model_luna16_full__fs_best.hd5"
         if not os.path.exists("workdir_loc/"):
             os.mkdir("workdir_loc")
         train(train_full_set=True, load_weights_path=None, model_name="lidc_loc", fold_count=-1, manual_labels=False)
