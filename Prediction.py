@@ -95,7 +95,7 @@ def filter_nodule_predictions(only_patient_id=None):
         df_nodule_predictions = pandas.read_csv(csv_path)
         filter_patient_nodules_predictions(df_nodule_predictions, patient_id, CUBE_SIZE)
         df_nodule_predictions.to_csv(csv_path, index=False)
-def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, magnification=1, flip=False, ext_name="",input_format = "dicom",evaluate = True):
+def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, magnification=1, flip=False, ext_name="new_method",input_format = "dicom",evaluate = True):
     # choose which directory you should store output at
     dst_dir = settings.LIDC_PREDICTION_DIR
     if not os.path.exists(dst_dir):
@@ -394,9 +394,13 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
         all_metric.append(["Total Mean Value",total_FP,total_FN,total_TP,total_TN,total_sens,total_spec])
         df = pandas.DataFrame(all_metric,columns=["patient_id", "false_positive", "false_negative","true_positive", "true_negative", "sensitivity", "specificity"])
         df.to_csv(settings.LIDC_PREDICTION_DIR + "Metric_All_Test_Candidates.csv", index=False)
+def filter_nodules(nodule_list):
+    #[annotation_index, p_x_perc, p_y_perc, p_z_perc, nodule_chance,status,nod_id]
+    for nodule_ in nodule_list:
 
 
 if __name__ == "__main__":
+
 
     CONTINUE_JOB = False
     #only_patient_id = "1.3.6.1.4.1.14519.5.2.1.6279.6001.330643702676971528301859647742"

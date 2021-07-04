@@ -535,3 +535,11 @@ if __name__ == "__main__":
     # This part to calculate metrics from the model
     if True:
         evaluate(image_label=settings.BASE_DIR_SSD + "Test_data.csv",model_path="models/model_luna16_full__fs_best.hd5")
+
+
+def weighted_binary_crossentropy(y_weight):
+    def loss(y_true, y_pred):
+        bce = losses.binary_crossentropy(y_true, y_pred)
+        loss = (y_weight * bce)
+        return K.mean(loss)
+    return loss
