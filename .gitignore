@@ -30,12 +30,18 @@ MANIFEST
 *.dcm
 *.xml
 *.csv
+*.svg
 __pycache__
 logs/
 workdir/
 models/
 models
 *.rar
+*.ckpt
+*.txt
+*.mhd
+*.zraw
+*.raw
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
@@ -72,7 +78,7 @@ settings.py
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
-
+*.gif
 # Flask stuff:
 instance/
 .webassets-cache

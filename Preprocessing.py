@@ -12,7 +12,10 @@ from multiprocessing import Pool
 from bs4 import BeautifulSoup  # conda install beautifulsoup4, coda install lxml
 import os
 import glob
+from pydicom.encaps import encapsulate
 import scipy.misc
+import matplotlib.pyplot as plt
+import nrrd
 import pydicom as dicom  # pip install pydicom
 only_slice_thik = True
 random.seed(1321)
@@ -247,7 +250,38 @@ def cv_flip(img, cols, rows, degree):
     M = cv2.getRotationMatrix2D((cols / 2, rows / 2), degree, 1.0)
     dst = cv2.warpAffine(img, M, (cols, rows))
     return dst
+def ensure_even(stream):
+    # Very important for some viewers
+    if len(stream) % 2:
+        return stream + b"\x00"
+    return stream
+def segment_dicom_images_patient(src_dir):
+    target_dir = settings.LIDC_SEGMENTED_LUNG_DIR
+    patient_id = os.path.basename(src_dir)
+    search_dirs = os.listdir(settings.LIDC_EXTRACTED_IMAGE_DIR)
+    scan_path = settings.LIDC_EXTRACTED_IMAGE_DIR + patient_id + "/img_0033_i.png"
+    # if os.path.exists(scan_path):
+    #    return
+    # if patient_id in search_dirs:
+    #    return
 
+    slices = load_patient(src_dir)
+    #ds = slices[0]
+    #ds.SeriesNumber = 58
+    #ds.fix_meta_info()
+    save_count = 55
+    seg_mask =  numpy.array(helpers.segmentation_watershed(slices),dtype=numpy.int16)
+    nrrd.write(os.path.join(target_dir, '%s_mask.nrrd' % (patient_id)), seg_mask)
+    #for seg_image in seg_images:
+        #ds.PixelData = encapsulate([ensure_even(seg_image.tobytes())])
+        #ds.save_as(target_dir + str(save_count) + '_seg_lung.dcm')
+        #plt.imshow(seg_image, cmap='gray')
+        #plt.savefig(target_dir + str(save_count) + '_seg_lung.png')
+        #plt.show()
+        #save_count +=1
+
+    #for seg_image in seg_images:
+#    SimpleITK.WriteImage(seg_images.tobytes(),target_dir + str(patient_id)+"_mask.mhd")
 
 def extract_dicom_images_patient(src_dir):
     target_dir = settings.LIDC_EXTRACTED_IMAGE_DIR
@@ -861,8 +895,35 @@ def process_lidc_annotations(only_patient=None, agreement_threshold=0):
                                          "diameter_x", "diameter_y", "malscore", "sphericiy", "margin", "spiculation",
                                          "texture", "calcification", "internal_structure", "lobulation", "subtlety"])
     df_annos.to_csv(settings.BASE_DIR + "lidc_annotations.csv", index=False)
+def process_segment_lung(delete_existing=False, only_process_patient=None):
+    if delete_existing and os.path.exists(settings.LIDC_SEGMENTED_LUNG_DIR):
+        print("Removing old stuff..")
+        if os.path.exists(settings.LIDC_SEGMENTED_LUNG_DIR):
+            shutil.rmtree(settings.LIDC_SEGMENTED_LUNG_DIR)
 
+    if not os.path.exists(settings.LIDC_SEGMENTED_LUNG_DIR):
+        os.mkdir(settings.LIDC_SEGMENTED_LUNG_DIR)
 
+    src_dir = settings.LIDC_RAW_SRC_DIR  # + "subset" + str(subject_no) + "/"
+
+    addedNotExist = False
+    src_path = []
+    for src_p in glob.glob(src_dir + "*/*/*/*30.dcm"):
+        # if not "100621383016233746780170740405" in src_path:
+        #     continue
+        src_p = os.path.split(src_p)[0]
+        src_path.append(src_p)
+    #print("Total nember of scans: ", len(src_path))
+    #print(src_path)
+    if only_process_patient is None:
+        pool = Pool(settings.WORKER_POOL_SIZE)
+        pool.map(segment_dicom_images_patient, src_path)
+    else:
+        # only_process_patient = "LIDC-IDRI-0132"
+        for src_p in src_path:
+            patient_id = ntpath.basename(src_p)
+            if patient_id == only_process_patient:
+                segment_dicom_images_patient(src_p)
 if __name__ == "__main__":
     if False:
         print("step 1 Process images...")
@@ -872,7 +933,7 @@ if __name__ == "__main__":
             df_annos = pandas.DataFrame(slices_thick_info,columns=["patient_id", "slice_thickness"])
             df_annos.to_csv(settings.BASE_DIR + "slices_thickness.csv", index=False)
 
-    if True:
+    if False:
         print("step 2 Process LIDC annotation...")
         process_lidc_annotations(only_patient=None, agreement_threshold=0)
     if False:
@@ -887,3 +948,5 @@ if __name__ == "__main__":
     if False:
         print("step 6 Process auto candidates patients...")
         process_auto_candidates_patients()
+    if True:
+        process_segment_lung(delete_existing=False, only_process_patient="1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860")
