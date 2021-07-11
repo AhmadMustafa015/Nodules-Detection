@@ -30,7 +30,7 @@ MEAN_PIXEL_VALUE = settings.MEAN_PIXEL_VALUE_NODULE
 NEGS_PER_POS = 20
 P_TH = 0.6
 
-PREDICT_STEP = 6
+PREDICT_STEP = 12
 PREDICT_STEP_Z = 1
 USE_DROPOUT = False
 
@@ -216,6 +216,9 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                         exist = True
                 if not exist:
                     unique_nodules.append([tx, ty, tz])
+        prev_z = 0
+        prev_x = 0
+        prev_y = 0
         for z in range(0, predict_volume_shape[0]):
             for y in range(0, predict_volume_shape[1]):
                 for x in range(0, predict_volume_shape[2]):
@@ -253,9 +256,9 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                                 print("nodule_chance:", nodule_chance)
                                 predict_volume[p_z, p_y, p_x] = nodule_chance
                                 if nodule_chance > P_TH:
-                                    p_z = p_z * PREDICT_STEP_Z + CROP_SIZE / 2
-                                    p_y = p_y * step + CROP_SIZE / 2
-                                    p_x = p_x * step + CROP_SIZE / 2
+                                    p_z = p_z * PREDICT_STEP_Z + CROP_SIZE
+                                    p_y = p_y * step + CROP_SIZE /2
+                                    p_x = p_x * step + CROP_SIZE /2
                                     #diameter_mm = round(p[1][i][0], 4)
                                     diameter_mm = 6.0
                                     diameter_mm_perc = round(diameter_mm / max(patient_img.shape[1],patient_img.shape[2]), 4)
@@ -266,6 +269,18 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                                     p_x_perc = round(p_x / patient_img.shape[2], 4)
 
                                     p_x,p_y,slice_num = helpers.percentage_to_pixels(p_x_perc, p_y_perc, p_z_perc, patient_img)
+                                    if slice_num == prev_z:
+                                        pass
+                                    if abs(prev_x - p_x) < 13 and abs(prev_y- p_y) < 13:
+                                        if prev_z == slice_num:
+                                            print("Skip Nodule because overlap in other nodule in x,y with distance < 12mm")
+                                            continue
+                                        elif abs(prev_z - slice_num) < 16:
+                                            print("Skip Nodule because overlap in other nodule in z with distance < 16mm")
+                                            continue
+                                    prev_z = slice_num
+                                    prev_y = p_y
+                                    prev_x = p_x
                                     src_img_paths = settings.LIDC_EXTRACTED_IMAGE_DIR + patient_id + "/" + "img_" + str(
                                         slice_num).rjust(4, '0') + "_i.png"
                                     print(settings.LIDC_EXTRACTED_IMAGE_DIR + patient_id + "/" + "img_" + str(
@@ -324,7 +339,7 @@ def predict_cubes(model_path, continue_job, only_patient_id=None, lidc=True, mag
                     iteration = iteration + 1
         df = pandas.DataFrame(patient_predictions_csv, columns=["anno_index", "coord_x", "coord_y", "coord_z", "nodule_chance","status","nodule_id"])
         print(df.shape)
-        df = filter_patient_nodules_predictions(df, patient_id, CROP_SIZE * magnification)
+        #df = filter_patient_nodules_predictions(df, patient_id, CROP_SIZE * magnification)
         print(df.shape)
         df.to_csv(csv_target_path, index=False)
         if evaluate:
@@ -404,7 +419,7 @@ if __name__ == "__main__":
 
     CONTINUE_JOB = False
     #only_patient_id = "1.3.6.1.4.1.14519.5.2.1.6279.6001.330643702676971528301859647742"
-    only_patient_id = "1.3.6.1.4.1.14519.5.2.1.6279.6001.110499927630654433643791451680"
+    only_patient_id = "1.3.6.1.4.1.14519.5.2.1.6279.6001.178391668569567816549737454720"
     #only_patient_id = None
     if not CONTINUE_JOB or only_patient_id is not None:
         for file_path in glob.glob("c:/tmp/*.*"):
