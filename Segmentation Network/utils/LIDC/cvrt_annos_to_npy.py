@@ -56,9 +56,10 @@ def arr2mask(arr, reso):
     return mask
 
 def arrs2mask(img_dir, ctr_arr_dir, save_dir):
+    #TODO: CHANGE TO DCM FORMAT
     pids = [f[:-4] for f in os.listdir(img_dir) if f.endswith('.mhd')]
     cnt = 0
-    consensus = {1: 0, 2: 0, 3: 0, 4: 0}
+    consensus = {1: 0, 2: 0, 3: 0, 4: 0} # represent the agreement level between doctors
     
     for k in consensus.keys():
         if not os.path.exists(os.path.join(save_dir, str(k))):
@@ -160,5 +161,5 @@ if __name__ == '__main__':
     os.makedirs(ctr_arr_save_dir, exist_ok=True)
     os.makedirs(mask_save_dir, exist_ok=True)
 
-    #annotation2masks(annos_dir, ctr_arr_save_dir)
+    annotation2masks(annos_dir, ctr_arr_save_dir)
     arrs2mask(img_dir, ctr_arr_save_dir, mask_save_dir)
