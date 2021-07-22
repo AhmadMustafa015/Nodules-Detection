@@ -258,6 +258,7 @@ def ensure_even(stream):
 def segment_dicom_images_patient(src_dir):
     target_dir = settings.LIDC_SEGMENTED_LUNG_DIR
     patient_id = os.path.basename(src_dir)
+    print("Segment Lung for scan ID: ", patient_id)
     search_dirs = os.listdir(settings.LIDC_EXTRACTED_IMAGE_DIR)
     scan_path = settings.LIDC_EXTRACTED_IMAGE_DIR + patient_id + "/img_0033_i.png"
     # if os.path.exists(scan_path):
@@ -270,6 +271,7 @@ def segment_dicom_images_patient(src_dir):
     #ds.SeriesNumber = 58
     #ds.fix_meta_info()
     save_count = 55
+
     seg_mask =  numpy.array(helpers.segmentation_watershed(slices),dtype=numpy.int16)
     nrrd.write(os.path.join(target_dir, '%s_mask.nrrd' % (patient_id)), seg_mask)
     #for seg_image in seg_images:
@@ -949,4 +951,4 @@ if __name__ == "__main__":
         print("step 6 Process auto candidates patients...")
         process_auto_candidates_patients()
     if True:
-        process_segment_lung(delete_existing=False, only_process_patient="1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860")
+        process_segment_lung(delete_existing=False, only_process_patient=None)
