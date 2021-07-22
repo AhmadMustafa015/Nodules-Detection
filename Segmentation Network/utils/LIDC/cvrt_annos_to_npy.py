@@ -59,14 +59,19 @@ def xml2mask(xml_file):
 
 def annotation2masks(annos_dir, save_dir):
     files = find_all_files(annos_dir, '.xml')
+    total_number_nodules = 0
+    small_total_number_nodules = 0
     for f in tqdm(files, total=len(files)): #tqdm to show progress par
         try:
             seriesuid, masks,s_masks = xml2mask(f)
+            total_number_nodules += len(masks)
             np.save(os.path.join(save_dir, '%s' % (seriesuid)), masks)
+            total_number_nodules += len(s_masks)
             np.save(os.path.join(save_dir, 'small_%s' % (seriesuid)), s_masks)
         except:
             print("Unexpected error:", sys.exc_info()[0])
-    
+    print("Total number of nodules > 3mm: ", total_number_nodules)
+    print("Total number of nodules < 3mm: ", small_total_number_nodules)
 def arr2mask(arr, reso):
     mask = np.zeros(reso)
     arr = arr.astype(np.int32)
@@ -197,5 +202,5 @@ if __name__ == '__main__':
     os.makedirs(ctr_arr_save_dir, exist_ok=True)
     os.makedirs(mask_save_dir, exist_ok=True)
 
-    #annotation2masks(annos_dir, ctr_arr_save_dir)
+    annotation2masks(annos_dir, ctr_arr_save_dir)
     arrs2mask(img_dir, ctr_arr_save_dir, mask_save_dir,scan_extension)
