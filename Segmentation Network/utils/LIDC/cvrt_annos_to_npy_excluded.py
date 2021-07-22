@@ -1,4 +1,4 @@
-from lidc_nodule_detection.pylung.annotation import *
+from pylung.annotation import *
 from tqdm import tqdm
 import sys
 import nrrd

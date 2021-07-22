@@ -1,5 +1,5 @@
 import sys
-sys.path.append('./')
+sys.path.append('../../')
 import numpy as np
 import scipy.ndimage
 from skimage import measure, morphology
@@ -9,13 +9,21 @@ import os
 import nrrd
 from scipy.ndimage.measurements import label
 from config import config
+sys.path.append('../../../')
+import settings
+import ntpath
+import glob
+sys.path.append('./')
 
-
-def load_itk_image(filename):
+def load_itk_image(filename,scan_extension,patient_id):
     """Return img array and [z,y,x]-ordered origin and spacing
     """
 
-    itkimage = sitk.ReadImage(filename)
+    if scan_extension == "dcm":  # Use the functional interface to read the image series.
+        reader = sitk.ImageSeriesReader()
+        itkimage = sitk.ReadImage(reader.GetGDCMSeriesFileNames(filename, patient_id))
+    else:
+        itkimage = sitk.ReadImage(filename)
     numpyImage = sitk.GetArrayFromImage(itkimage)
 
     numpyOrigin = np.array(list(reversed(itkimage.GetOrigin())))
@@ -460,7 +468,7 @@ def convex_hull_dilate(binary_mask, dilate_factor=1.5, iterations=10):
     return binary_mask_dilated
 
 
-def apply_mask(image, binary_mask1, binary_mask2, pad_value=170,
+def apply_mask(image, binary_mask1, pad_value=170,
                bone_thred=210, remove_bone=False):
     """
     Apply the binary mask of each lung to the image. Regions out of interest
@@ -478,10 +486,10 @@ def apply_mask(image, binary_mask1, binary_mask2, pad_value=170,
         applying the lung mask.
     """
     #TODO: THE EFFECT OF PADDING, THE BONE VALUE LOOK GOOD BUT FURTHER DEBUGGING IS NECESSERLY
-    binary_mask = binary_mask1 + binary_mask2 #TODO: ONE ONLY
+    binary_mask = binary_mask1 #+ binary_mask2 #TODO: ONE ONLY
     binary_mask1_dilated = convex_hull_dilate(binary_mask1)
-    binary_mask2_dilated = convex_hull_dilate(binary_mask2)
-    binary_mask_dilated = binary_mask1_dilated + binary_mask2_dilated
+    #binary_mask2_dilated = convex_hull_dilate(binary_mask2)
+    binary_mask_dilated = binary_mask1_dilated #+ binary_mask2_dilated
     binary_mask_extra = binary_mask_dilated ^ binary_mask
 
     # replace image values outside binary_mask_dilated as pad value
@@ -612,24 +620,41 @@ def auxiliary_segment(image):
 
 
 def preprocess(params):
-    pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample = params
+    pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample, scan_extension = params
     
     print('Preprocessing %s...' % (pid))
     #Return numpy array (segmented lung)
     #TODO: INPUT MASK AS RNND FORMATE
-    lung_mask, _, _ = load_itk_image(os.path.join(lung_mask_dir, '%s.mhd' % (pid)))
+    if scan_extension == 'dcm':
+        lung_mask, _ = nrrd.read(os.path.join(settings.LIDC_SEGMENTED_LUNG_DIR, '%s_mask.nrrd' % (pid)))
+    else:
+        lung_mask, _, _ = load_itk_image(os.path.join(lung_mask_dir, '%s.mhd' % (pid)))
     #TODO: Input images as dcm formate instead of mhd
-    img, origin, spacing = load_itk_image(os.path.join(img_dir, '%s.mhd' % (pid))) #load LIDC images
+    if scan_extension == "dcm":
+        src_path = []
+        pids = []
+        for src_p in glob.glob(img_dir + "*/*/*/*30.dcm"):
+            src_p = os.path.split(src_p)[0]
+            id_p = os.path.basename(src_p)
+            if id_p not in pids:
+                src_path.append(src_p)
+                pids.append(id_p)
+        for src_p in src_path:
+            patient_id = ntpath.basename(src_p)
+            if patient_id == pid:
+                img, origin, spacing = load_itk_image(src_p, scan_extension, pid)
+    else:
+        img, origin, spacing = load_itk_image(os.path.join(img_dir, '%s.mhd' % (pid))) #load LIDC images
     #TODO: NODULE MASK?
     nod_mask, _ = nrrd.read(os.path.join(nod_mask_dir, '%s' % (pid)))
     # lung_mask ==4 means left lung and 3 mean right
     #TODO: NO NEED BOTH COMPINED IN WATERSHED
-    binary_mask1, binary_mask2 = lung_mask == 4, lung_mask == 3
-    binary_mask = binary_mask1 + binary_mask2
+    #binary_mask1, binary_mask2 = lung_mask == 4, lung_mask == 3
+    #binary_mask = binary_mask1 + binary_mask2
 
     img = HU2uint8(img)
     #TODO: ONE INPUT MASK
-    seg_img = apply_mask(img, binary_mask1, binary_mask2)
+    seg_img = apply_mask(img, lung_mask)
 
     if do_resample:
         print('Resampling...')
@@ -638,9 +663,9 @@ def preprocess(params):
         for i in range(int(nod_mask.max())):
             mask = (nod_mask == (i + 1)).astype(np.uint8)
             mask, _ = resample(mask, spacing, order=3)
-            seg_nod_mask[mask > 0.5] = i + 1
+            seg_nod_mask[mask > 0.5] = i + 1 # after resampling the mask color may change
 
-    lung_box = get_lung_box(binary_mask, seg_img.shape)
+    lung_box = get_lung_box(lung_mask, seg_img.shape)
 
     z_min, z_max = lung_box[0]
     y_min, y_max = lung_box[1]
@@ -668,7 +693,7 @@ def generate_label(params):
     for i in instance_nums:
         mask = (masks == i).astype(np.uint8)
         zz, yy, xx = np.where(mask)
-        d = max(zz.max() - zz.min() + 1,  yy.max() - yy.min() + 1, xx.max() - xx.min() + 1)
+        d = max(zz.max() - zz.min() + 1,  yy.max() - yy.min() + 1, xx.max() - xx.min() + 1) #nodule diameter
         bboxes.append(np.array([(zz.max() + zz.min()) / 2., (yy.max() + yy.min()) / 2., (xx.max() + xx.min()) / 2., d]))
         
     bboxes = np.array(bboxes)
@@ -678,7 +703,22 @@ def generate_label(params):
     print('Finished masks to bboxes %s' % (pid))
 
     np.save(os.path.join(save_dir, '%s_bboxes.npy' % (pid)), bboxes)
+    #TODO:Small nodules part
+    s_masks, _ = nrrd.read(os.path.join(save_dir, 'small_%s_mask.nrrd' % (pid)))
+    s_bboxes = []
+    instance_nums = [num for num in np.unique(masks) if num]
+    for i in instance_nums:
+        mask = (masks == i).astype(np.uint8)
+        zz, yy, xx = np.where(mask)
+        d = 3.0 #let us say small nodules diameter is 3 mm
+        s_bboxes.append(zz, yy, xx, d)
+    s_bboxes = np.array(s_bboxes)
+    if not len(s_bboxes):
+        print('%s does not have any small nodules!!!' % (pid))
 
+    print('Finished masks to s_bboxes %s' % (pid))
+
+    np.save(os.path.join(save_dir, 'small_%s_bboxes.npy' % (pid)), s_bboxes)
 def main():
     n_consensus = 3
     do_resample = True
@@ -686,6 +726,7 @@ def main():
     nod_mask_dir = os.path.join(config['mask_save_dir'], str(n_consensus))
     img_dir = config['data_dir']
     save_dir = os.path.join(config['preprocessed_data_dir'])
+    scan_extension = config['scan_extension']
     print('nod mask dir', nod_mask_dir)
     print('save dir ', save_dir)
     
@@ -694,7 +735,7 @@ def main():
         
     params_lists = []
     for pid in os.listdir(nod_mask_dir):
-        params_lists.append([pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample])
+        params_lists.append([pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample, scan_extension])
     
     pool = Pool(processes=10)
     pool.map(preprocess, params_lists)

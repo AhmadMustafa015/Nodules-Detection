@@ -15,7 +15,7 @@ torch.cuda.manual_seed_all(SEED)
 BASE = 'F:/Cengiz/Nodules-Detection/Segmentation Network/workspace/data/LIDC/' # make sure you have the ending '/'
 data_config = {
     # put combined LUNA16 .mhd files into one folder
-    'data_dir': 'D:/Datasets/manifest-1600709154662/LIDC-IDRI/',
+    'data_dir': 'D:/LIDC-IDRI/',
     'scan_extension': 'dcm',
     # directory for putting all preprocessed results for training to this path
     'preprocessed_data_dir': BASE + 'preprocessed_test/3',
