@@ -406,7 +406,7 @@ def extract_lung(image, spacing):
 
     return (binary_mask1, binary_mask2, has_lung)
 
-
+#IN PREV STUDY we take the range from -1000 to 400
 def HU2uint8(image, HU_min=-1200.0, HU_max=600.0, HU_nan=-2000.0):
     """
     Convert HU unit into uint8 values. First bound HU values by predfined min
@@ -441,12 +441,14 @@ def convex_hull_dilate(binary_mask, dilate_factor=1.5, iterations=10):
         that only region of interest is True. Each binary mask is ROI of one
         side of the lung.
     """
+    #TODO: DISCUSS WITH BATURALP, THE CONVEX DILATE OF THE INFERIOR PART OF THE LUNG IS HELPFUL?
     binary_mask_dilated = np.array(binary_mask)
     for i in range(binary_mask.shape[0]):
         slice_binary = binary_mask[i]
 
         if np.sum(slice_binary) > 0:
-            slice_convex = morphology.convex_hull_image(slice_binary)
+            slice_convex = morphology.convex_hull_image(slice_binary) #The convex hull is the set of pixels included in the
+                                                                    # smallest convex polygon that surround all white pixels in the input image.
 
             if np.sum(slice_convex) <= dilate_factor * np.sum(slice_binary):
                 binary_mask_dilated[i] = slice_convex
@@ -454,7 +456,7 @@ def convex_hull_dilate(binary_mask, dilate_factor=1.5, iterations=10):
     struct = scipy.ndimage.morphology.generate_binary_structure(3, 1)
     binary_mask_dilated = scipy.ndimage.morphology.binary_dilation(
         binary_mask_dilated, structure=struct, iterations=10)
-
+    #Dilation is a mathematical morphology operation that uses a structuring element for expanding the shapes in an image
     return binary_mask_dilated
 
 
@@ -475,7 +477,8 @@ def apply_mask(image, binary_mask1, binary_mask2, pad_value=170,
     return: D uint8 numpy array with the same shape of the image after
         applying the lung mask.
     """
-    binary_mask = binary_mask1 + binary_mask2
+    #TODO: THE EFFECT OF PADDING, THE BONE VALUE LOOK GOOD BUT FURTHER DEBUGGING IS NECESSERLY
+    binary_mask = binary_mask1 + binary_mask2 #TODO: ONE ONLY
     binary_mask1_dilated = convex_hull_dilate(binary_mask1)
     binary_mask2_dilated = convex_hull_dilate(binary_mask2)
     binary_mask_dilated = binary_mask1_dilated + binary_mask2_dilated
@@ -483,7 +486,7 @@ def apply_mask(image, binary_mask1, binary_mask2, pad_value=170,
 
     # replace image values outside binary_mask_dilated as pad value
     image_new = image * binary_mask_dilated + \
-        pad_value * (1 - binary_mask_dilated).astype('uint8')
+        pad_value * (1 - binary_mask_dilated).astype('uint8') #TODO: why to fill with pad?
 
     # set bones in extra mask to 170 (ie convert HU > 482 to HU 0;
     # water).
@@ -612,15 +615,20 @@ def preprocess(params):
     pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample = params
     
     print('Preprocessing %s...' % (pid))
-
+    #Return numpy array (segmented lung)
+    #TODO: INPUT MASK AS RNND FORMATE
     lung_mask, _, _ = load_itk_image(os.path.join(lung_mask_dir, '%s.mhd' % (pid)))
-    img, origin, spacing = load_itk_image(os.path.join(img_dir, '%s.mhd' % (pid)))
+    #TODO: Input images as dcm formate instead of mhd
+    img, origin, spacing = load_itk_image(os.path.join(img_dir, '%s.mhd' % (pid))) #load LIDC images
+    #TODO: NODULE MASK?
     nod_mask, _ = nrrd.read(os.path.join(nod_mask_dir, '%s' % (pid)))
-
+    # lung_mask ==4 means left lung and 3 mean right
+    #TODO: NO NEED BOTH COMPINED IN WATERSHED
     binary_mask1, binary_mask2 = lung_mask == 4, lung_mask == 3
     binary_mask = binary_mask1 + binary_mask2
 
     img = HU2uint8(img)
+    #TODO: ONE INPUT MASK
     seg_img = apply_mask(img, binary_mask1, binary_mask2)
 
     if do_resample:
