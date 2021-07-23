@@ -633,6 +633,7 @@ def preprocess(params):
     if scan_extension == "dcm":
         src_path = []
         pids = []
+        img = None
         for src_p in glob.glob(img_dir + "*/*/*/*30.dcm"):
             src_p = os.path.split(src_p)[0]
             id_p = os.path.basename(src_p)
@@ -643,6 +644,8 @@ def preprocess(params):
             patient_id = ntpath.basename(src_p)
             if patient_id == pid:
                 img, origin, spacing = load_itk_image(src_p, scan_extension, pid)
+        if img is None:
+            print("Error patient ID not found: ", pid)
     else:
         img, origin, spacing = load_itk_image(os.path.join(img_dir, '%s.mhd' % (pid))) #load LIDC images
     #TODO: NODULE MASK?
@@ -685,7 +688,7 @@ def preprocess(params):
 
 
 def generate_label(params):
-    pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample = params
+    pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample, scan_extension = params
     masks, _ = nrrd.read(os.path.join(save_dir, '%s_mask.nrrd' % (pid)))
 
     bboxes = []
@@ -703,6 +706,7 @@ def generate_label(params):
     print('Finished masks to bboxes %s' % (pid))
 
     np.save(os.path.join(save_dir, '%s_bboxes.npy' % (pid)), bboxes)
+    return
     #TODO:Small nodules part
     s_masks, _ = nrrd.read(os.path.join(save_dir, 'small_%s_mask.nrrd' % (pid)))
     s_bboxes = []
@@ -737,11 +741,11 @@ def main():
     for pid in os.listdir(nod_mask_dir):
         params_lists.append([pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample, scan_extension])
     
-    pool = Pool(processes=10)
-    pool.map(preprocess, params_lists)
+    #pool = Pool(processes=10)
+    #pool.map(preprocess, params_lists)
     
-    pool.close()
-    pool.join()
+    #pool.close()
+    #pool.join()
 
     pool = Pool(processes=10)
     pool.map(generate_label, params_lists)
