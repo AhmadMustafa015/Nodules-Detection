@@ -66,7 +66,7 @@ def annotation2masks(annos_dir, save_dir):
             seriesuid, masks,s_masks = xml2mask(f)
             total_number_nodules += len(masks)
             np.save(os.path.join(save_dir, '%s' % (seriesuid)), masks)
-            total_number_nodules += len(s_masks)
+            small_total_number_nodules += len(s_masks)
             np.save(os.path.join(save_dir, 'small_%s' % (seriesuid)), s_masks)
         except:
             print("Unexpected error:", sys.exc_info()[0])
