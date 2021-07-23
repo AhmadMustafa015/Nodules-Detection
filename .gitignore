@@ -72,7 +72,7 @@ coverage.xml
 *.pot
 *.xlsx
 settings.py
-config.py
+Segmentation Network/config.py
 *.nrrd
 *.npy
 # Django stuff:
