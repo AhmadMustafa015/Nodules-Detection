@@ -1,4 +1,7 @@
 import sys
+
+import numpy as np
+
 sys.path.append('../../')
 from pylung.annotation import *
 from tqdm import tqdm
@@ -79,7 +82,7 @@ def arr2mask(arr, reso):
     
     return mask
 
-def arrs2mask(img_dir, ctr_arr_dir, save_dir,scan_extension):
+def arrs2mask(img_dir, ctr_arr_dir, save_dir,scan_extension,small_nodule=False):
     #TODO: CHANGE TO DCM FORMAT
     if scan_extension == "dcm":
         src_path = []
@@ -105,7 +108,10 @@ def arrs2mask(img_dir, ctr_arr_dir, save_dir,scan_extension):
             img, origin, spacing = load_itk_image(img_dir,scan_extension,pid)
         else:
             img, origin, spacing = load_itk_image(os.path.join(img_dir, '%s.mhd' % (pid)),scan_extension,pid)
-        ctr_arrs = np.load(os.path.join(ctr_arr_dir, '%s.npy' % (pid)),allow_pickle=True)
+        if small_nodule:
+            ctr_arrs = np.load(os.path.join(ctr_arr_dir, 'small_%s.npy' % (pid)),allow_pickle=True)
+        else:
+            ctr_arrs = np.load(os.path.join(ctr_arr_dir, '%s.npy' % (pid)),allow_pickle=True)
         cnt += len(ctr_arrs) #ctr give you the total number of processed nodules
 
         nodule_masks = [] # a list of 3D (image size) info for all nodules in a slice
@@ -113,7 +119,22 @@ def arrs2mask(img_dir, ctr_arr_dir, save_dir,scan_extension):
             #convert z from voxel to pixel
             z_origin = origin[0]
             z_spacing = spacing[0]
-            ctr_arr = np.array(ctr_arr) # [z, roi_xy[1], roi_xy[0]]
+            if small_nodule:
+                assert ctr_arr.shape[0] == 1, "Error: more than 1 center is used to describe one nodule"
+                ctr_arr_temp = np.zeros((3,3))
+                ctr_arr_temp[0,:] = ctr_arr
+                if z_spacing < 1:
+                    ctr_arr_temp[1,:] = [ctr_arr[0,0], ctr_arr[0,1] + 3, ctr_arr[0,2] + 3]
+                    ctr_arr_temp[2,:] = [ctr_arr[0,0], ctr_arr[0,1] - 3, ctr_arr[0,2] - 3]
+                if z_spacing < 2:
+                    ctr_arr_temp[1,:] = [ctr_arr[0,0], ctr_arr[0,1] + 2, ctr_arr[0,2] + 2]
+                    ctr_arr_temp[2,:] = [ctr_arr[0,0], ctr_arr[0,1] - 2, ctr_arr[0,2] - 2]
+                else:
+                    ctr_arr_temp[1,:] = [ctr_arr[0,0], ctr_arr[0,1] + 1, ctr_arr[0,2] + 1]
+                    ctr_arr_temp[2,:] = [ctr_arr[0,0], ctr_arr[0,1] - 1, ctr_arr[0,2] - 1]
+                ctr_arr = ctr_arr_temp
+            ctr_arr = np.array(ctr_arr) # [z, roi_xy[1], roi_xy[0]] [z,y,x]
+
             ctr_arr[:, 0] = np.absolute(ctr_arr[:, 0] - z_origin) / z_spacing
             ctr_arr = ctr_arr.astype(np.int32)
 
@@ -181,7 +202,10 @@ def arrs2mask(img_dir, ctr_arr_dir, save_dir,scan_extension):
                 same_nodules = masks[index] # extract all nodules list that occurs n times
                 m = np.logical_or.reduce(same_nodules) # will apply or to all similar nodules that are agreed by n doctors
                 mask[m] = i + 1 # will save each nodule places in the mask with a unique number starting from 1
-            nrrd.write(os.path.join(save_dir, str(n), pid), mask) # save each nodule in a separate nrrd file
+            if small_nodule:
+                nrrd.write(os.path.join(save_dir, str(n), pid + "_small"), mask) # save each nodule in a separate nrrd file
+            else:
+                nrrd.write(os.path.join(save_dir, str(n), pid), mask)  # save each nodule in a separate nrrd file
         
 #         for i, same_nodules in enumerate(masks):
 #             cons = len(same_nodules)
@@ -202,5 +226,5 @@ if __name__ == '__main__':
     os.makedirs(ctr_arr_save_dir, exist_ok=True)
     os.makedirs(mask_save_dir, exist_ok=True)
 
-    annotation2masks(annos_dir, ctr_arr_save_dir)
-    arrs2mask(img_dir, ctr_arr_save_dir, mask_save_dir,scan_extension)
+    #annotation2masks(annos_dir, ctr_arr_save_dir)
+    arrs2mask(img_dir, ctr_arr_save_dir, mask_save_dir,scan_extension,small_nodule=True)

@@ -724,7 +724,7 @@ def generate_label(params):
 
     np.save(os.path.join(save_dir, 'small_%s_bboxes.npy' % (pid)), s_bboxes)
 def main():
-    n_consensus = 3
+    n_consensus = 3 # This mean include nodules that agreed by at least n_consensus
     do_resample = True
     lung_mask_dir = config['lung_mask_dir']
     nod_mask_dir = os.path.join(config['mask_save_dir'], str(n_consensus))
