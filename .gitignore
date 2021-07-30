@@ -73,6 +73,7 @@ coverage.xml
 *.xlsx
 settings.py
 Segmentation Network/config.py
+Segmentation Network/workspace/data/LIDC/masks_test/*/*
 *.nrrd
 *.npy
 # Django stuff:
