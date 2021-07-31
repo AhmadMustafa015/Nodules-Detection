@@ -620,7 +620,7 @@ def auxiliary_segment(image):
 
 
 def preprocess(params):
-    pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample, scan_extension = params
+    pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample, scan_extension,small_nodules_mask = params
     
     print('Preprocessing %s...' % (pid))
     #Return numpy array (segmented lung)
@@ -649,7 +649,10 @@ def preprocess(params):
     else:
         img, origin, spacing = load_itk_image(os.path.join(img_dir, '%s.mhd' % (pid))) #load LIDC images
     #TODO: NODULE MASK?
-    nod_mask, _ = nrrd.read(os.path.join(nod_mask_dir, '%s' % (pid)))
+    if small_nodules_mask:
+        nod_mask, _ = nrrd.read(os.path.join(nod_mask_dir, '%s' % (pid) + "_small"))
+    else:
+        nod_mask, _ = nrrd.read(os.path.join(nod_mask_dir, '%s' % (pid)))
     # lung_mask ==4 means left lung and 3 mean right
     #TODO: NO NEED BOTH COMPINED IN WATERSHED
     #binary_mask1, binary_mask2 = lung_mask == 4, lung_mask == 3
@@ -673,56 +676,59 @@ def preprocess(params):
     z_min, z_max = lung_box[0]
     y_min, y_max = lung_box[1]
     x_min, x_max = lung_box[2]
-
-    seg_img = seg_img[z_min:z_max, y_min:y_max, x_min:x_max]
     seg_nod_mask = seg_nod_mask[z_min:z_max, y_min:y_max, x_min:x_max]
-    np.save(os.path.join(save_dir, '%s_origin.npy' % (pid)), origin)
-    np.save(os.path.join(save_dir, '%s_spacing.npy' % (pid)), resampled_spacing)
-    np.save(os.path.join(save_dir, '%s_ebox_origin.npy' % (pid)), np.array((z_min, y_min, x_min)))
-    nrrd.write(os.path.join(save_dir, '%s_clean.nrrd' % (pid)), seg_img)
-    nrrd.write(os.path.join(save_dir, '%s_mask.nrrd' % (pid)), seg_nod_mask)
+    if not small_nodules_mask:
+        seg_img = seg_img[z_min:z_max, y_min:y_max, x_min:x_max]
+        np.save(os.path.join(save_dir, '%s_origin.npy' % (pid)), origin)
+        np.save(os.path.join(save_dir, '%s_spacing.npy' % (pid)), resampled_spacing)
+        np.save(os.path.join(save_dir, '%s_ebox_origin.npy' % (pid)), np.array((z_min, y_min, x_min)))
+        nrrd.write(os.path.join(save_dir, '%s_clean.nrrd' % (pid)), seg_img)
+        nrrd.write(os.path.join(save_dir, '%s_mask.nrrd' % (pid)), seg_nod_mask)
+    else:
+        nrrd.write(os.path.join(save_dir, 'small_%s_mask.nrrd' % (pid)), seg_nod_mask)
 
-    print('number of nodules before: %s, afeter preprocessing: %s' % (nod_mask.max(), seg_nod_mask.max()))
+    print('number of nodules before: %s, after preprocessing: %s' % (nod_mask.max(), seg_nod_mask.max()))
     print('Finished %s' % (pid))
     print()
 
 
 def generate_label(params):
-    pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample, scan_extension = params
-    masks, _ = nrrd.read(os.path.join(save_dir, '%s_mask.nrrd' % (pid)))
+    pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample, scan_extension,small_nodules_mask = params
+    if small_nodules_mask:
+        #TODO:Small nodules part
+        s_masks, _ = nrrd.read(os.path.join(save_dir, 'small_%s_mask.nrrd' % (pid)))
+        s_bboxes = []
+        instance_nums = [num for num in np.unique(s_masks) if num]
+        for i in instance_nums:
+            mask = (s_masks == i).astype(np.uint8)
+            zz, yy, xx = np.where(mask)
+            d = 3.0 #let us say small nodules diameter is 3 mm
+            s_bboxes.append(zz, yy, xx, d)
+        s_bboxes = np.array(s_bboxes)
+        if not len(s_bboxes):
+            print('%s does not have any small nodules!!!' % (pid))
 
-    bboxes = []
-    instance_nums = [num for num in np.unique(masks) if num]
-    for i in instance_nums:
-        mask = (masks == i).astype(np.uint8)
-        zz, yy, xx = np.where(mask)
-        d = max(zz.max() - zz.min() + 1,  yy.max() - yy.min() + 1, xx.max() - xx.min() + 1) #nodule diameter
-        bboxes.append(np.array([(zz.max() + zz.min()) / 2., (yy.max() + yy.min()) / 2., (xx.max() + xx.min()) / 2., d]))
-        
-    bboxes = np.array(bboxes)
-    if not len(bboxes):
-        print('%s does not have any nodules!!!' % (pid))
+        print('Finished masks to s_bboxes %s' % (pid))
 
-    print('Finished masks to bboxes %s' % (pid))
+        np.save(os.path.join(save_dir, 'small_%s_bboxes.npy' % (pid)), s_bboxes)
+    else:
+        masks, _ = nrrd.read(os.path.join(save_dir, '%s_mask.nrrd' % (pid)))
 
-    np.save(os.path.join(save_dir, '%s_bboxes.npy' % (pid)), bboxes)
-    return
-    #TODO:Small nodules part
-    s_masks, _ = nrrd.read(os.path.join(save_dir, 'small_%s_mask.nrrd' % (pid)))
-    s_bboxes = []
-    instance_nums = [num for num in np.unique(masks) if num]
-    for i in instance_nums:
-        mask = (masks == i).astype(np.uint8)
-        zz, yy, xx = np.where(mask)
-        d = 3.0 #let us say small nodules diameter is 3 mm
-        s_bboxes.append(zz, yy, xx, d)
-    s_bboxes = np.array(s_bboxes)
-    if not len(s_bboxes):
-        print('%s does not have any small nodules!!!' % (pid))
+        bboxes = []
+        instance_nums = [num for num in np.unique(masks) if num]
+        for i in instance_nums:
+            mask = (masks == i).astype(np.uint8)
+            zz, yy, xx = np.where(mask)
+            d = max(zz.max() - zz.min() + 1,  yy.max() - yy.min() + 1, xx.max() - xx.min() + 1) #nodule diameter
+            bboxes.append(np.array([(zz.max() + zz.min()) / 2., (yy.max() + yy.min()) / 2., (xx.max() + xx.min()) / 2., d]))
 
-    print('Finished masks to s_bboxes %s' % (pid))
+        bboxes = np.array(bboxes)
+        if not len(bboxes):
+            print('%s does not have any nodules!!!' % (pid))
 
-    np.save(os.path.join(save_dir, 'small_%s_bboxes.npy' % (pid)), s_bboxes)
+        print('Finished masks to bboxes %s' % (pid))
+        np.save(os.path.join(save_dir, '%s_bboxes.npy' % (pid)), bboxes)
+
 def main():
     n_consensus = 3 # This mean include nodules that agreed by at least n_consensus
     do_resample = True
@@ -733,13 +739,13 @@ def main():
     scan_extension = config['scan_extension']
     print('nod mask dir', nod_mask_dir)
     print('save dir ', save_dir)
-    
+    small_nodules_mask = True
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
         
     params_lists = []
     for pid in os.listdir(nod_mask_dir):
-        params_lists.append([pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample, scan_extension])
+        params_lists.append([pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample, scan_extension,small_nodules_mask])
     
     #pool = Pool(processes=10)
     #pool.map(preprocess, params_lists)
