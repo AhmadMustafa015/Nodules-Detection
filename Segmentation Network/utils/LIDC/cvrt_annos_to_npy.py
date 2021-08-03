@@ -87,7 +87,7 @@ def arrs2mask(img_dir, ctr_arr_dir, save_dir,scan_extension,small_nodule=False,r
     if scan_extension == "dcm":
         src_path = []
         pids = []
-        for src_p in glob.glob(img_dir + "*/*/*/*30.dcm"):
+        for src_p in glob.glob(img_dir + "*/*/*/*9*.dcm"):
             src_p = os.path.split(src_p)[0]
             id_p = os.path.basename(src_p)
             if id_p not in pids:
@@ -97,15 +97,19 @@ def arrs2mask(img_dir, ctr_arr_dir, save_dir,scan_extension,small_nodule=False,r
         pids = [f[:-4] for f in os.listdir(img_dir) if f.endswith('.mhd')]
     cnt = 0
     consensus = {1: 0, 2: 0, 3: 0, 4: 0} # represent the agreement level between doctors
-    
+
     for k in consensus.keys():
         if not os.path.exists(os.path.join(save_dir, str(k))):
             os.makedirs(os.path.join(save_dir, str(k)))
     for counter, pid in enumerate(tqdm(pids, total=len(pids))): #loop per CT scan
+        if "1.3.6.1.4.1.14519.5.2.1.6279.6001.187966156856911682643615997798" == pid: # error memory
+            continue
+        if "1.3.6.1.4.1.14519.5.2.1.6279.6001.137375498893536422914241295628" == pid: # error nodules out of range
+            continue
         if resume_scans:
             if small_nodule and os.path.isfile(os.path.join(save_dir, str(1), pid + "_small")):
                 continue
-            elif small_nodule and os.path.isfile(os.path.join(save_dir, str(1), pid)):
+            elif not small_nodule and os.path.isfile(os.path.join(save_dir, str(1), pid)):
                 continue
         if scan_extension == "dcm":
             img_dir = src_path[counter]
@@ -123,8 +127,12 @@ def arrs2mask(img_dir, ctr_arr_dir, save_dir,scan_extension,small_nodule=False,r
             #convert z from voxel to pixel
             z_origin = origin[0]
             z_spacing = spacing[0]
+            ctr_arr = np.array(ctr_arr)
             if small_nodule:
-                assert ctr_arr.shape[0] == 1, "Error: more than 1 center is used to describe one nodule"
+                #"Error: more than 1 center is used to describe one nodule"
+                if ctr_arr.shape[0] > 1:
+                    print("Warning: more than 1 center is used to describe one nodule")
+                    continue
                 ctr_arr_temp = np.zeros((3,3))
                 ctr_arr_temp[0,:] = ctr_arr
                 if z_spacing < 1:
@@ -141,8 +149,10 @@ def arrs2mask(img_dir, ctr_arr_dir, save_dir,scan_extension,small_nodule=False,r
 
             ctr_arr[:, 0] = np.absolute(ctr_arr[:, 0] - z_origin) / z_spacing
             ctr_arr = ctr_arr.astype(np.int32)
-
-            mask = np.zeros(img.shape) # nodules mask per slice
+            try:
+                mask = np.zeros(img.shape) # nodules mask per slice
+            except:
+                print("can't process nodule: ", ctr_arr, "in patient ID: ", pid)
             #iterate over each slice and creat a mask by filling the mask array to 1
             for z in np.unique(ctr_arr[:, 0]): # loop per unique slice
                 ctr = ctr_arr[ctr_arr[:, 0] == z][:, [2, 1]] # get X and Y coordinate only for nodules in slice z

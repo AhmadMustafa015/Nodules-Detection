@@ -650,7 +650,14 @@ def preprocess(params):
         img, origin, spacing = load_itk_image(os.path.join(img_dir, '%s.mhd' % (pid))) #load LIDC images
     #TODO: NODULE MASK?
     if small_nodules_mask:
-        nod_mask, _ = nrrd.read(os.path.join(nod_mask_dir, '%s' % (pid) + "_small"))
+        if os.path.isfile(os.path.join(save_dir, 'small_%s_mask.nrrd' % (pid))):
+            print('skip image id %s; already exist' % (pid))
+            return
+        try:
+            nod_mask, _ = nrrd.read(os.path.join(nod_mask_dir, '%s' % (pid) + "_small"))
+        except:
+            print('Error: can not find nodule mask %s small' %(pid))
+            return
     else:
         nod_mask, _ = nrrd.read(os.path.join(nod_mask_dir, '%s' % (pid)))
     # lung_mask ==4 means left lung and 3 mean right
@@ -745,19 +752,21 @@ def main():
         
     params_lists = []
     for pid in os.listdir(nod_mask_dir):
+        if "_small" in pid:
+            continue
         params_lists.append([pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample, scan_extension,small_nodules_mask])
     
-    #pool = Pool(processes=10)
-    #pool.map(preprocess, params_lists)
-    
-    #pool.close()
-    #pool.join()
-
     pool = Pool(processes=10)
-    pool.map(generate_label, params_lists)
+    pool.map(preprocess, params_lists)
     
     pool.close()
     pool.join()
+
+    #pool = Pool(processes=10)
+    #pool.map(generate_label, params_lists)
+    
+    #pool.close()
+    #pool.join()
 
 
 if __name__=='__main__':
