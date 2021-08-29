@@ -103,7 +103,6 @@ def arrs2mask(img_dir, ctr_arr_dir, save_dir,scan_extension,small_nodule=False,r
     for k in consensus.keys():
         if not os.path.exists(os.path.join(save_dir, str(k))):
             os.makedirs(os.path.join(save_dir, str(k)))
-
     for counter, pid in enumerate(tqdm(pids, total=len(pids))): #loop per CT scan
         if "1.3.6.1.4.1.14519.5.2.1.6279.6001.187966156856911682643615997798" == pid: # error memory
             continue
