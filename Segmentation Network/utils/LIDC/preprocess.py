@@ -629,6 +629,7 @@ def preprocess(params):
         lung_mask, _ = nrrd.read(os.path.join(settings.LIDC_SEGMENTED_LUNG_DIR, '%s_mask.nrrd' % (pid)))
     else:
         lung_mask, _, _ = load_itk_image(os.path.join(lung_mask_dir, '%s.mhd' % (pid)))
+    lung_mask = np.flipud(lung_mask)
     #TODO: Input images as dcm formate instead of mhd
     if scan_extension == "dcm":
         src_path = []
@@ -703,14 +704,19 @@ def generate_label(params):
     pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample, scan_extension,small_nodules_mask = params
     if small_nodules_mask:
         #TODO:Small nodules part
-        s_masks, _ = nrrd.read(os.path.join(save_dir, 'small_%s_mask.nrrd' % (pid)))
+        try:
+            s_masks, _ = nrrd.read(os.path.join(save_dir, 'small_%s_mask.nrrd' % (pid)))
+        except:
+            print("Scan ID: ", pid, "  not found SKIP!")
+            return
         s_bboxes = []
         instance_nums = [num for num in np.unique(s_masks) if num]
         for i in instance_nums:
             mask = (s_masks == i).astype(np.uint8)
             zz, yy, xx = np.where(mask)
-            d = 3.0 #let us say small nodules diameter is 3 mm
-            s_bboxes.append(zz, yy, xx, d)
+            d = max(zz.max() - zz.min() + 1, yy.max() - yy.min() + 1, xx.max() - xx.min() + 1)  # nodule diameter
+            s_bboxes.append(
+                np.array([(zz.max() + zz.min()) / 2., (yy.max() + yy.min()) / 2., (xx.max() + xx.min()) / 2., d]))
         s_bboxes = np.array(s_bboxes)
         if not len(s_bboxes):
             print('%s does not have any small nodules!!!' % (pid))
@@ -728,13 +734,40 @@ def generate_label(params):
             zz, yy, xx = np.where(mask)
             d = max(zz.max() - zz.min() + 1,  yy.max() - yy.min() + 1, xx.max() - xx.min() + 1) #nodule diameter
             bboxes.append(np.array([(zz.max() + zz.min()) / 2., (yy.max() + yy.min()) / 2., (xx.max() + xx.min()) / 2., d]))
-
         bboxes = np.array(bboxes)
         if not len(bboxes):
             print('%s does not have any nodules!!!' % (pid))
 
         print('Finished masks to bboxes %s' % (pid))
         np.save(os.path.join(save_dir, '%s_bboxes.npy' % (pid)), bboxes)
+
+
+def merge_maskes(params):
+    pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample, scan_extension, small_nodules_mask = params
+    if os.path.isfile(os.path.join(save_dir, 'small_%s_mask.nrrd' % (pid))) and \
+        os.path.isfile(os.path.join(save_dir, '%s_mask.nrrd' % (pid))):
+        s_masks, _ = nrrd.read(os.path.join(save_dir, 'small_%s_mask.nrrd' % (pid)))
+        s_masks = s_masks.astype(np.float32)
+        masks, _ = nrrd.read(os.path.join(save_dir, '%s_mask.nrrd' % (pid)))
+        masks = masks.astype(np.float32)
+        try:
+            masks = masks + s_masks
+        except:
+            if masks.shape[0] > s_masks.shape[0]:
+                dif = s_masks.shape[0] - masks.shape[0]
+                masks[:dif] = masks[:dif] + s_masks
+            else:
+                dif = -s_masks.shape[0] + masks.shape[0]
+                masks = masks + s_masks[:dif]
+            print(pid)
+        print("new mask max: ", masks.max())
+        nrrd.write(os.path.join(save_dir, '%s_mask.nrrd' % (pid)), masks)
+    elif os.path.isfile(os.path.join(save_dir, 'small_%s_mask.nrrd' % (pid))):
+        s_masks, _ = nrrd.read(os.path.join(save_dir, 'small_%s_mask.nrrd' % (pid)))
+        nrrd.write(os.path.join(save_dir, '%s_mask.nrrd' % (pid)), s_masks)
+    else:
+        print("No Small nodules found in scan ID: ", pid)
+
 
 def main():
     n_consensus = 3 # This mean include nodules that agreed by at least n_consensus
@@ -746,13 +779,15 @@ def main():
     scan_extension = config['scan_extension']
     print('nod mask dir', nod_mask_dir)
     print('save dir ', save_dir)
-    small_nodules_mask = True
+    small_nodules_mask = False
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
         
     params_lists = []
     for pid in os.listdir(nod_mask_dir):
         if "_small" in pid:
+            continue
+        if pid != "1.3.6.1.4.1.14519.5.2.1.6279.6001.100398138793540579077826395208":
             continue
         params_lists.append([pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample, scan_extension,small_nodules_mask])
     
@@ -762,12 +797,16 @@ def main():
     pool.close()
     pool.join()
 
-    #pool = Pool(processes=10)
-    #pool.map(generate_label, params_lists)
+    pool = Pool(processes=10)
+    pool.map(generate_label, params_lists)
     
-    #pool.close()
-    #pool.join()
+    pool.close()
+    pool.join()
+    pool = Pool(processes=10)
+    pool.map(merge_maskes, params_lists)
 
+    pool.close()
+    pool.join()
 
 if __name__=='__main__':
     main()
