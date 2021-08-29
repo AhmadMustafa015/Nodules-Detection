@@ -61,7 +61,7 @@ parser.add_argument('--num-workers', default=train_config['num_workers'], type=i
 def main():
     # Load training configuration
     args = parser.parse_args()
-
+    #load options
     net = args.net
     initial_checkpoint = args.ckpt
     out_dir = args.out_dir
@@ -79,7 +79,7 @@ def main():
     num_workers = args.num_workers
     lr_schdule = train_config['lr_schedule']
     data_dir = args.data_dir
-    label_types = config['label_types']
+    label_types = config['label_types'] #bbox or masks
 
     train_dataset_list = []
     val_dataset_list = []
@@ -90,7 +90,7 @@ def main():
         if label_type == 'bbox':
             dataset = BboxReader(data_dir, set_name, config, mode='train')
         elif label_type == 'mask':
-            dataset = MaskReader(data_dir, set_name, config, mode='train')
+            dataset = MaskReader(data_dir, set_name, config, mode='train') #BASE + 'preprocessed_test/3', /split/train_3.csv
 
         train_dataset_list.append(dataset)
 
@@ -106,7 +106,7 @@ def main():
         val_dataset_list.append(dataset)
         
     train_loader = DataLoader(ConcatDataset(train_dataset_list), batch_size=batch_size, shuffle=True,
-                              num_workers=num_workers, pin_memory=True, collate_fn=train_collate)
+                              num_workers=num_workers, pin_memory=True, collate_fn=train_collate) # TODO read about dataloader
     val_loader = DataLoader(ConcatDataset(val_dataset_list), batch_size=batch_size, shuffle=False,
                               num_workers=num_workers, pin_memory=True, collate_fn=train_collate)
     

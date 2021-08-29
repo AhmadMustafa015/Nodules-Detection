@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from matplotlib import patches
 import random
 import os
-import IPython.html.widgets as w
+import ipywidgets as w
 import cv2
 import matplotlib.animation as animation
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -14,7 +14,8 @@ from IPython.display import clear_output
 from matplotlib import colors
 from config import config
 import matplotlib.gridspec as gridspec
-
+import nrrd
+import settings
 
 # color for Nodule in the config['roi_names]
 color_dict = {
@@ -494,3 +495,9 @@ custom_cmap2 = colors.ListedColormap(cmaplist2)
 # Create legend
 patches1 = [patches.Patch(color=cmaplist[i], label="{}".format(config['roi_names'][i])) for i in range(len(cmaplist))]
 patches2 = [patches.Patch(color=cmaplist2[i], label="{}".format(legend_names[i]), fill=False) for i in range(len(cmaplist2))]
+pid = '1.3.6.1.4.1.14519.5.2.1.6279.6001.534083630500464995109143618896'
+save_dir = os.path.join(config['preprocessed_data_dir'])
+lung_mask, _ = nrrd.read(os.path.join(settings.LIDC_SEGMENTED_LUNG_DIR, '%s_mask.nrrd' % (pid)))
+original_mask = np.load(os.path.join(save_dir, '%s_origin.npy' % (pid)))
+
+show3Dimg2(lung_mask,original_mask)

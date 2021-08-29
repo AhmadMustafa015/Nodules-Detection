@@ -23,7 +23,7 @@ class MaskReader(Dataset):
         self.blacklist = cfg['blacklist']
         self.set_name = set_name
 
-        labels = []
+        labels = [] #contains all the labels loaded from "bboxes.npy"
         self.source = []
         if set_name.endswith('.csv'):
             self.filenames = np.genfromtxt(set_name, dtype=str)
@@ -49,8 +49,8 @@ class MaskReader(Dataset):
             for i, l in enumerate(labels):
                 if len(l) > 0 :
                     for t in l:
-                        self.bboxes.append([np.concatenate([[i],t])])
-            self.bboxes = np.concatenate(self.bboxes,axis = 0).astype(np.float32)
+                        self.bboxes.append([np.concatenate([[i],t])]) #Concatenate all the boxes coordinate with the number of the label
+            self.bboxes = np.concatenate(self.bboxes,axis = 0).astype(np.float32) # concatenate based on the labels number
         self.crop = Crop(cfg)
         self.split_combiner = split_combiner
 
@@ -220,10 +220,10 @@ def augment(sample, target, masks, do_flip = True, do_rotate=True, do_swap = Tru
 
 class Crop(object):
     def __init__(self, config):
-        self.crop_size = config['crop_size']
+        self.crop_size = config['crop_size'] # Box size
         self.bound_size = config['bound_size']
         self.stride = config['stride']
-        self.pad_value = config['pad_value']
+        self.pad_value = config['pad_value'] #The mask color
 
     def __call__(self, imgs, target, masks, do_scale=False, isRand=False):
         masks = (masks > 0).astype(np.int32)

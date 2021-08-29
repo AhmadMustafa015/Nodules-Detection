@@ -754,6 +754,8 @@ def main():
     for pid in os.listdir(nod_mask_dir):
         if "_small" in pid:
             continue
+        if "" != pid:
+            continue
         params_lists.append([pid, lung_mask_dir, nod_mask_dir, img_dir, save_dir, do_resample, scan_extension,small_nodules_mask])
     
     pool = Pool(processes=10)

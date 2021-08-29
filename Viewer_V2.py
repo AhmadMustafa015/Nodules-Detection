@@ -4,6 +4,8 @@ import tkinter as tk
 from tkinter import *
 import os
 from tkinter import ttk
+
+import numpy as np
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 import cv2
 from tkinter import filedialog,messagebox
@@ -15,7 +17,14 @@ import pandas
 import glob
 import shutil
 import copy
+import nrrd
+from matplotlib import colors
+import matplotlib.pyplot as plt
+from matplotlib import patches
 
+color_dict = {
+    1: {'color': [128, 0, 128], 'name': 'Nodule'},
+}
 class MousePositionTracker(tk.Frame):
     """ Tkinter Canvas mouse position widget. """
 
@@ -160,6 +169,8 @@ class CanvasImage:
         self.image_dirs = []
         self.removed_nodule_list = []
         self.folder = ""
+        self.segmetation_files = []
+        self.viewed_nodules = []
         self.current_slice = 0
         self.imscale = 1.0
         self.app = placeholder
@@ -183,7 +194,9 @@ class CanvasImage:
         placeholder.config(menu=option_menu)
         file_menu = Menu(option_menu)
         option_menu.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="Open Scan",command=self.open_file) #To_open_file
+        file_menu.add_command(label="Open Scan Folder (DCM)",command=self.open_file) #To_open_folder
+        file_menu.add_command(label="Open Scan File (MHD & NPY)", command=self.open_file_)  # To_open_file
+        #file_menu.add_command(label="Apply Lung Mask", command=self.open_mask)  # To_open_file
         file_menu.add_command(label="Open Label", command=self.open_label)  # To_open_file
         file_menu.add_command(label="Exit", command=placeholder.quit)
 
@@ -203,6 +216,8 @@ class CanvasImage:
         # e.grid(row=2, column=0)
         f = tk.Button(self.__imframe, text="Zoom out", command=self.Zoom2, height=3, width=10)
         f.grid(row=1, column=14)
+        seg = tk.Button(self.__imframe, text="Segment Nodules", command=self.segment_nodule, height=3, width=10)
+        seg.grid(row=2, column=14)
         self.l2 = tk.Label(self.__imframe, text="Slice number: ", fg="black", font=26)
         self.l2.grid(row=0, column=14, columnspan=1, sticky=NE)
         #f = tk.Label(self.__imframe, text="Tounch to zoom in", fg="blue", font=26)
@@ -284,6 +299,7 @@ class CanvasImage:
         nodule_id = "nodule_"+str(self.count_annotation).rjust(2,'0')
         self.annotated_nodules.append([nodule_id,new_bbox[0],new_bbox[1],new_bbox[2],new_bbox[3],current_slice,self.patient_id])
         return self.annotated_nodules,self.patient_id,self.folder
+
     def configure(self,event):
         #self.canvas.delete("all")
         #w, h = event.width, event.height
@@ -462,8 +478,59 @@ class CanvasImage:
         self.__show_image()
         self.l2.config(text="Slice number: " + str(self.current_slice + 1) + "/" + str(len(self.image_dirs)))
 
+    def open_file_(self):
+        # self.app.filename = filedialog.askopenfilename()
+        self.app.filename = filedialog.askopenfilename(title = "Select file",filetypes = (("numpy files","*.n*"),("mhd files","*.mhd"),("all files","*.*")))
+        self.folder = self.app.filename
+        self._update_folder_label()
+        print(self.folder)
+        self.read_dicom()
+        print(self.image_dirs)
+        self.imscale = 1.0
+        self.path = self.image_dirs[self.current_slice]
+        self.__image.close()
+        self.__image = Image.open(self.path)  # reopen / reset image
+        self.imwidth, self.imheight = self.__image.size
+        self.container = self.canvas.create_rectangle((0, 0, self.imwidth, self.imheight), width=0)
+        self.__pyramid = [self.smaller()] if self.__huge else [Image.open(self.path)]
+        self.__show_image()
+        self.l2.config(text="Slice number: " + str(self.current_slice + 1) + "/" + str(len(self.image_dirs)))
+
     def open_label(self):
         self.app.filename = filedialog.askopenfilename(title = "Select file",filetypes = (("xml files","*.xml"),("all files","*.*")))
+        self.xml_path = self.app.filename
+        print(self.xml_path)
+        pos_annot = self.load_lidc_xml()
+        print(pos_annot)
+        self.read_dicom(label_image=True,label_list=pos_annot)
+    def segment_nodule(self):
+        self.app.filename = filedialog.askopenfilename(title="Select file",filetypes=(("numpy files","*.n*"),("all files", "*.*")))
+        N = 1
+        cmaplist = [list(np.array(color_dict[i]['color']) / 255.) for i in range(1, N + 1)]
+        custom_cmap = colors.ListedColormap(cmaplist)
+        self.segmetation_files.append(self.app.filename)
+        for segmentation_file in self.segmetation_files:
+            if segmentation_file in self.viewed_nodules:
+                continue
+            #masks = np.load(segmentation_file)
+            masks, _ = nrrd.read(segmentation_file)
+            #for i in range(len(masks)):
+            masks = masks.astype(np.float32)
+            #masks[masks == 0] = np.nan
+            zz, yy, xx = np.where(masks != 0)
+            for z,y,x in zip(zz,yy,xx):
+                img_path = "C:/tmp/original/" + "img_" + str(z).rjust(4, '0') + "_i.png"
+                image = cv2.imread(img_path)
+                #image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+                temp_mask = np.zeros(image.shape,np.uint8)
+                #temp_mask[temp_mask == 0] = np.nan
+                temp_mask = cv2.circle(temp_mask, (x,y), radius=0, color=(0, 255, 0), thickness=-1)
+                added_image = cv2.addWeighted(image, 1, temp_mask, 0.05, 1)
+                cv2.imwrite(img_path, added_image)
+            self.refresh_image()
+
+    def open_mask(self):
+        self.app.filename = filedialog.askopenfilename(title = "Select file",filetypes = (("numpy files","*.npy"),("all files","*.*"),("MHD","*.mhd")))
         self.xml_path = self.app.filename
         print(self.xml_path)
         pos_annot = self.load_lidc_xml()
@@ -665,34 +732,64 @@ class CanvasImage:
         # Redraw some figures before showing image on the screen
         self.redraw_figures()  # method for child classes
         self.__show_image()
-    def read_dicom(self,label_image=False,label_list=[]):
+    def read_dicom(self,label_image=False,label_list=[],lung_mask=False):
         reader = SimpleITK.ImageSeriesReader()
         patient_id = os.path.basename(self.folder)
-        itk_img = SimpleITK.ReadImage(reader.GetGDCMSeriesFileNames(self.folder, patient_id))
-        img_array = SimpleITK.GetArrayFromImage(itk_img)
+        extension_ct = [".mhd", ".nrrd", ".npy"]
+        itk_img = None
+        img_array = None
+        for ext in extension_ct: 
+            if ext in patient_id:
+                if ext == ".mhd":
+                    itk_img = SimpleITK.ReadImage(self.folder)
+                elif ext == ".npy":
+                    img_array = numpy.load(self.folder)
+                elif ext == ".nrrd":
+                    img_array, _ = nrrd.read(self.folder)
+        if img_array is None and itk_img is None:
+            itk_img = SimpleITK.ReadImage(reader.GetGDCMSeriesFileNames(self.folder, patient_id))
+            img_array = SimpleITK.GetArrayFromImage(itk_img)
+        elif img_array is None:
+            img_array = SimpleITK.GetArrayFromImage(itk_img)
         #Referash annotations
+        patient_id = patient_id.replace(".mhd",'')
+        patient_id = patient_id.replace(".nrrd", '')
+        patient_id = patient_id.replace(".npy", '')
         self.annotated_nodules = []
         self.count_annotation = 0
         if not os.path.exists("C:/tmp/"):
             os.mkdir("C:/tmp/")
         if not os.path.exists("C:/tmp/original/"):
             os.mkdir("C:/tmp/original/")
+        if not os.path.exists("C:/tmp/mask/"):
+            os.mkdir("C:/tmp/mask/")
         self.image_dirs = []
+        self.image_mask_dirs = []
         for file_path in glob.glob("c:/tmp/*.*"):
             if not os.path.isdir(file_path):
                 try:
                     os.remove(file_path)
                 except:
                     print("Can't remove file: ", file_path)
+        self.image_mask = np.zeros(img_array.shape)
         for i in range(img_array.shape[0]):
             img_path = "C:/tmp/original/" + "img_" + str(i).rjust(4, '0') + "_i.png"
             img_path1 = "C:/tmp/" + "img_" + str(i).rjust(4, '0') + "_i.png"
+            img_path_mask = "C:/tmp/mask/" + "img_" + str(i).rjust(4, '0') + "_i.png"
             org_img = img_array[i]
-            org_img = helpers.normalize_hu(org_img)
+            if org_img.max() > 260 or org_img.min() < 0:
+                org_img = helpers.normalize_hu(org_img)
             #org_img = helpers.normalize_hu(org_img)
             if not label_image:
-                cv2.imwrite(img_path, org_img * 255)
+                if org_img.max() > 1:
+                    cv2.imwrite(img_path, org_img) #* 255)
+                else:
+                    cv2.imwrite(img_path, org_img * 255)
                 self.image_dirs.append(img_path)
+            elif lung_mask == True:
+                self.image_mask_dirs.append(img_path_mask)
+                self.image_mask[i] = org_img
+                cv2.imwrite(img_path_mask, org_img * 255)
             else:
                 org_img = cv2.cvtColor(org_img.astype('float32'), cv2.COLOR_GRAY2BGR)
                 self.image_dirs.append(img_path1)
@@ -710,7 +807,10 @@ class CanvasImage:
                         print("Dicom viewer, slice number: ", str(slice_num).rjust(4, '0'),"\t bbox: ", xymin,xymax)
                         org_img = cv2.rectangle(org_img, xymin, xymax, colorRGB, 1)
                         #break
-                cv2.imwrite(img_path1, org_img * 255)
+                if org_img.max() <= 1:
+                    cv2.imwrite(img_path1, org_img * 255)
+                else:
+                    cv2.imwrite(img_path1, org_img)
         self.is_dicom = True
     def Zoom(self, event):
         # print("hll")
