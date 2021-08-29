@@ -67,6 +67,8 @@ def annotation2masks(annos_dir, save_dir):
     for f in tqdm(files, total=len(files)): #tqdm to show progress par
         try:
             seriesuid, masks,s_masks = xml2mask(f)
+            if seriesuid != "1.3.6.1.4.1.14519.5.2.1.6279.6001.100398138793540579077826395208":
+                continue
             total_number_nodules += len(masks)
             np.save(os.path.join(save_dir, '%s' % (seriesuid)), masks)
             small_total_number_nodules += len(s_masks)
@@ -106,7 +108,9 @@ def arrs2mask(img_dir, ctr_arr_dir, save_dir,scan_extension,small_nodule=False,r
             continue
         if "1.3.6.1.4.1.14519.5.2.1.6279.6001.137375498893536422914241295628" == pid: # error nodules out of range
             continue
-        if resume_scans:
+        if pid != "1.3.6.1.4.1.14519.5.2.1.6279.6001.100398138793540579077826395208":
+            continue
+        if resume_scans and False:
             if small_nodule and os.path.isfile(os.path.join(save_dir, str(1), pid + "_small")):
                 continue
             elif not small_nodule and os.path.isfile(os.path.join(save_dir, str(1), pid)):

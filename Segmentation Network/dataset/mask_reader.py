@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from lxml.html.builder import HEAD
 from torch.utils.data import Dataset
 import os
 from scipy.ndimage import zoom
@@ -31,17 +32,23 @@ class MaskReader(Dataset):
             self.filenames = np.load(set_name)
 
         if mode != 'test':
-            self.filenames = [self.filenames]
-            pass
-            #self.filenames = [f for f in self.filenames if (f not in self.blacklist)]
-            #self.filenames = [f for f in self.filenames]
+            #self.filenames = [self.filenames]
+            #pass
+            self.filenames = [f for f in self.filenames if (f not in self.blacklist)]
+            self.filenames = [f for f in self.filenames]
 
         for fn in self.filenames:
-            l = np.load(os.path.join(data_dir, '%s_bboxes.npy' % fn))
-
+            # For nodules > 3mm
+            if os.path.isfile(os.path.join(data_dir, '%s_bboxes.npy' % fn)):
+                l = np.load(os.path.join(data_dir, '%s_bboxes.npy' % fn))
+            if os.path.isfile(os.path.join(data_dir, 'small_%s_bboxes.npy' % fn)):
+                l_small = np.load(os.path.join(data_dir, 'small_%s_bboxes.npy' % fn))
+                if l_small != []:
+                    l = np.concatenate((l, l_small), axis=0)
             if np.all(l==0):
                 l=np.array([])
             labels.append(l)
+
 
         self.sample_bboxes = labels
         if self.mode in ['train', 'val', 'eval']:
