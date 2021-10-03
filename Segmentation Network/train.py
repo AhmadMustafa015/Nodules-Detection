@@ -19,7 +19,7 @@ import traceback
 from torch.utils.tensorboard import SummaryWriter
 
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
 this_module = sys.modules[__name__]
 
 
