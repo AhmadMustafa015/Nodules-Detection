@@ -1,13 +1,11 @@
 import sys
-sys.path.append('Segmentation Network')
-from net.layer import *
-
-from config import net_config as config
+from layer import *
+from ..config import net_config as config
 import copy
 from torch.nn.parallel.data_parallel import data_parallel
 import time
 import torch.nn.functional as F
-from utils.util import center_box_to_coord_box, ext2factor, clip_boxes
+from ..utils.util import center_box_to_coord_box, ext2factor, clip_boxes
 from torch.nn.parallel import data_parallel
 import random
 from scipy.stats import norm
@@ -336,7 +334,7 @@ class NoduleNet(nn.Module):
         self.cfg = cfg
         self.mode = mode
         self.feature_net = FeatureNet(config, 1, 128)
-        self.rpn = RpnHead(config, in_channels=128)
+        self.rpn = RpnHead(config, in_channels=128) # Region Proposal Network
         self.rcnn_head = RcnnHead(config, in_channels=64)
         self.rcnn_crop = CropRoi(self.cfg, cfg['rcnn_crop_size'])
         self.mask_head = MaskHead(config, in_channels=128)
