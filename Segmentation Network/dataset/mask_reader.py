@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-from lxml.html.builder import HEAD
 from torch.utils.data import Dataset
 import os
 from scipy.ndimage import zoom
@@ -39,16 +38,22 @@ class MaskReader(Dataset):
 
         for fn in self.filenames:
             # For nodules > 3mm
+            is_found = True
             if os.path.isfile(os.path.join(data_dir, '%s_bboxes.npy' % fn)):
                 l = np.load(os.path.join(data_dir, '%s_bboxes.npy' % fn))
+            else:
+                is_found = False
             if os.path.isfile(os.path.join(data_dir, 'small_%s_bboxes.npy' % fn)):
+                is_found = True
                 l_small = np.load(os.path.join(data_dir, 'small_%s_bboxes.npy' % fn))
                 if l_small != []:
                     l = np.concatenate((l, l_small), axis=0)
             if np.all(l==0):
                 l=np.array([])
             labels.append(l)
-
+            if not is_found:
+                self.filenames.remove(fn)
+        print("Total Training Data is: ", len(self.filenames))
 
         self.sample_bboxes = labels
         if self.mode in ['train', 'val', 'eval']:
@@ -83,7 +88,8 @@ class MaskReader(Dataset):
                 masks = self.load_mask(filename)
                     
                 bboxes = self.sample_bboxes[int(bbox[0])]
-
+                if filename == "1.3.6.1.4.1.14519.5.2.1.6279.6001.183184435049555024219115904825":
+                    print("ok")
                 do_sacle = self.augtype['scale'] and (self.mode=='train')
                 sample, target, masks = self.crop(imgs, bbox[1:], masks, do_sacle, is_random_crop)
                 if self.mode == 'train' and not is_random_crop:
@@ -107,6 +113,9 @@ class MaskReader(Dataset):
             bboxes, truth_masks = masks2bboxes_masks_one(masks, border=self.cfg['bbox_border'])
             truth_masks = np.array(truth_masks).astype(np.uint8)
             bboxes = np.array(bboxes)
+            print(filename, "\t\t\t", bboxes, "\t\t\t", bbox)
+            if bboxes == []:
+                print(filename)
             truth_labels = bboxes[:, -1]
             truth_bboxes = bboxes[:, :-1]
             masks = np.expand_dims(masks, 0).astype(np.float32)
@@ -277,7 +286,7 @@ class Crop(object):
             max(start[1],0):min(start[1] + crop_size[1], imgs.shape[2]),
             max(start[2],0):min(start[2] + crop_size[2], imgs.shape[3])]
         masks = np.pad(masks, pad[1:], 'constant', constant_values=0)
-
+        print(masks.shape, '\t\t\t',masks.max())
         for i in range(3):
             target[i] = target[i] - start[i]
 
@@ -286,18 +295,22 @@ class Crop(object):
                 warnings.simplefilter("ignore")
                 crop = zoom(crop, [1, scale, scale, scale], order=1)
                 masks = zoom(masks, [scale, scale, scale], order=1)
+                print(masks.shape, '\t\t\t', masks.max())
             newpad = self.crop_size[0] - crop.shape[1:][0]
             if newpad<0:
                 crop = crop[:,:-newpad,:-newpad,:-newpad]
                 masks = masks[:-newpad,:-newpad,:-newpad]
+                print(masks.shape, '\t\t\t', masks.max())
             elif newpad>0:
                 pad2 = [[0, 0], [0, newpad], [0, newpad], [0, newpad]]
                 crop = np.pad(crop, pad2, 'constant', constant_values=self.pad_value)
                 masks = np.pad(masks, pad2[1:], 'constant', constant_values=0)
+                print(masks.shape, '\t\t\t', masks.max())
 
             for i in range(4):
                 target[i] = target[i]*scale
         masks, num = label((masks > 0.5).astype(np.int32))
+        print(masks.shape, '\t\t\t', masks.max())
 
         return crop, target, masks
 
