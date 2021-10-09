@@ -394,8 +394,9 @@ def masks2bboxes_masks_one(masks, border):
 #     print "***inside function****",masks.shape
     D, H, W = masks.shape
     instance_nums = [num for num in np.unique(masks) if num]
-    print("***instance_nums***:",instance_nums)
+    #print("***instance_nums***:",instance_nums)
     if instance_nums == []:
+        print("***instance_nums***:", instance_nums)
         print(masks.max())
     bboxes = []
     truth_masks = []

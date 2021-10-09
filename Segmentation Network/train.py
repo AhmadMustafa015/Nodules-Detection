@@ -74,7 +74,7 @@ def main():
     epoch_rcnn = args.epoch_rcnn
     epoch_mask = args.epoch_mask
     batch_size = args.batch_size
-    train_set_list = args.train_set_list
+    train_set_list = args.train_set_list #TODO: added any new train set to this part
     val_set_list = args.val_set_list
     num_workers = args.num_workers
     lr_schdule = train_config['lr_schedule']
@@ -106,7 +106,7 @@ def main():
         val_dataset_list.append(dataset)
         
     train_loader = DataLoader(ConcatDataset(train_dataset_list), batch_size=batch_size, shuffle=True,
-                              num_workers=num_workers, pin_memory=True, collate_fn=train_collate) # TODO read about dataloader
+                              num_workers=num_workers, pin_memory=True, collate_fn=train_collate)
     val_loader = DataLoader(ConcatDataset(val_dataset_list), batch_size=batch_size, shuffle=False,
                               num_workers=num_workers, pin_memory=True, collate_fn=train_collate)
     
@@ -162,7 +162,7 @@ def main():
 
     for i in tqdm(range(start_epoch, epochs + 1), desc='Total'):
         # learning rate schedule
-        if isinstance(optimizer, torch.optim.SGD):
+        if isinstance(optimizer, torch.optim.SGD): #to check the type of the optimizer
             lr = lr_schdule(i, init_lr=init_lr, total=epochs)
             for param_group in optimizer.param_groups:
                 param_group['lr'] = lr

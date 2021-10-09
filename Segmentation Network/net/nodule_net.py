@@ -1,11 +1,13 @@
 import sys
-from layer import *
-from ..config import net_config as config
+sys.path.append('Segmentation Network')
+from net.layer import *
+
+from config import net_config as config
 import copy
 from torch.nn.parallel.data_parallel import data_parallel
 import time
 import torch.nn.functional as F
-from ..utils.util import center_box_to_coord_box, ext2factor, clip_boxes
+from utils.util import center_box_to_coord_box, ext2factor, clip_boxes
 from torch.nn.parallel import data_parallel
 import random
 from scipy.stats import norm
