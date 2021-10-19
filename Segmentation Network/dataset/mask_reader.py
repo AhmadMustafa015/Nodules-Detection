@@ -88,8 +88,8 @@ class MaskReader(Dataset):
                 masks = self.load_mask(filename)
                     
                 bboxes = self.sample_bboxes[int(bbox[0])]
-                if filename == "1.3.6.1.4.1.14519.5.2.1.6279.6001.183184435049555024219115904825":
-                    print("ok")
+                #if filename == "1.3.6.1.4.1.14519.5.2.1.6279.6001.183184435049555024219115904825":
+                #    print("ok")
                 do_sacle = self.augtype['scale'] and (self.mode=='train')
                 sample, target, masks = self.crop(imgs, bbox[1:], masks, do_sacle, is_random_crop)
                 if self.mode == 'train' and not is_random_crop:
@@ -102,7 +102,9 @@ class MaskReader(Dataset):
                 imgs = self.load_img(filename)
                 bboxes = self.sample_bboxes[randimid]
                 isScale = self.augtype['scale'] and (self.mode=='train')
+                print("Section 2 ****** BBOX: ", bboxes)
                 sample, target, bboxes, coord = self.crop(imgs, [], bboxes,isScale=False,isRand=True)
+                print("Section 2 ****** BBOX: ", bboxes)
 
             if sample.shape[1] != self.cfg['crop_size'][0] or sample.shape[2] != \
                 self.cfg['crop_size'][1] or sample.shape[3] != self.cfg['crop_size'][2]:
@@ -113,10 +115,13 @@ class MaskReader(Dataset):
             bboxes, truth_masks = masks2bboxes_masks_one(masks, border=self.cfg['bbox_border'])
             truth_masks = np.array(truth_masks).astype(np.uint8)
             bboxes = np.array(bboxes)
-            print(filename, "\t\t\t", bboxes, "\t\t\t", bbox)
-            if bboxes == []:
+            #print(filename, "\t\t\t", bboxes, "\t\t\t", bbox)
+            if bboxes is None:
                 print(filename)
-            truth_labels = bboxes[:, -1]
+            try:
+                truth_labels = bboxes[:, -1]
+            except:
+                print(filename)
             truth_bboxes = bboxes[:, :-1]
             masks = np.expand_dims(masks, 0).astype(np.float32)
 
@@ -243,7 +248,7 @@ class Crop(object):
 
     def __call__(self, imgs, target, masks, do_scale=False, isRand=False):
         masks = (masks > 0).astype(np.int32)
-        if do_scale and target[3] > 5:
+        if do_scale and target[3] > 6:
             radiusLim = [8.,120.]
             scaleLim = [0.75,1.25]
             scaleRange = [np.min([np.max([(radiusLim[0]/target[3]),scaleLim[0]]),1])
@@ -254,23 +259,30 @@ class Crop(object):
             crop_size=self.crop_size
         bound_size = self.bound_size
         target = np.copy(target)
-        print(masks.max())
+        #print(masks.max())
         tt_tt = masks[masks >0].shape
         start = []
+        debug_var_start_rand = [0,0]
+        debug_var_start_rand_2 = 0
         for i in range(3): #z,y,x
             #s and e are used to select the starting point for each axes
             if not isRand:
                 r = target[3] / 2
                 s = np.floor(target[i] - r) + 1 - bound_size
                 e = np.ceil(target[i] + r) + 1 + bound_size - crop_size[i]
+                debug_var_start_rand = [0,1]
             else:
                 s = np.max([imgs.shape[i+1]-crop_size[i]/2,imgs.shape[i+1]/2+bound_size]) #since the images are list of 3D
                 e = np.min([crop_size[i]/2,              imgs.shape[i+1]/2-bound_size])
                 target = np.array([np.nan,np.nan,np.nan,np.nan])
+                debug_var_start_rand = [1,0]
             if s>e: #s is the center - radius | e is the center + radius - crop size
                 start.append(np.random.randint(e,s))# the start point is a random number btw center and (center - crop size)
+                debug_var_start_rand_2 = [0,debug_var_start_rand]
             else:
                 start.append(int(target[i])-crop_size[i]/2+np.random.randint(-bound_size/2,bound_size/2))
+                debug_var_start_rand_2 = [1, debug_var_start_rand]
+        debug_var_all_index_1 = np.argwhere(masks > 0)
 
         pad = []
         pad.append([0,0]) # we are dealing with list of 3D this is for the list idx
@@ -291,8 +303,8 @@ class Crop(object):
         #print(masks.shape, '\t\t\t',masks.max())# should be equal to crop_size , 1
         for i in range(3):
             target[i] = target[i] - start[i]
-
-        if do_scale and target[3] > 5:
+        tt_tt_2 = np.count_nonzero(masks)
+        if do_scale and target[3] > 6:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 crop = zoom(crop, [1, scale, scale, scale], order=1) #The array is zoomed using spline interpolation of the requested order.
@@ -313,9 +325,17 @@ class Crop(object):
                 target[i] = target[i]*scale
         masks, num = label((masks > 0.5).astype(np.int32))
         if num == 0:
-            print(tt_tt)
-            print("Error")
-        print(masks.shape, '\t\t\t', masks.max())
+            print("Size of the images before: ",tt_tt,"\tSize of the nodules after: ",tt_tt_2)
+            print("Error",scale,"\tstarting point: ",start)
+            print(masks.shape, '\t\t\t', masks.max())
+            print("Target ", target)
+            print("coordinate for the cropped image X: ",max(start[0],0),"\tTO\t",min(start[0] + crop_size[0], imgs.shape[1]))
+            print("coordinate for the cropped image Y: ", max(start[1], 0), "\tTO\t",
+                  min(start[1] + crop_size[1], imgs.shape[2]))
+            print("coordinate for the cropped image Z: ", max(start[2], 0), "\tTO\t",
+                  min(start[2] + crop_size[2], imgs.shape[3]))
+            print("Coordinate for the mask > 1 before cropping: ",debug_var_all_index_1)
+            print("starting code selecting: ",debug_var_start_rand_2)
 
         return crop, target, masks
 
