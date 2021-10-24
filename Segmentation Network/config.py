@@ -64,8 +64,7 @@ net_config = {
     'th_pos_train': 0.5,
     'th_pos_val': 1,
     'num_hard': 3,
-    #'bound_size': 12,
-    'bound_size': 0,
+    'bound_size': 12,
     'blacklist': [],
 
     'augtype': {'flip': True, 'rotate': True, 'scale': True, 'swap': False},

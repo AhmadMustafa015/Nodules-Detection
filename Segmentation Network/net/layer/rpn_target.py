@@ -1,3 +1,4 @@
+import sys
 try:
     from utils.pybox import *
 except ImportError:
@@ -7,7 +8,8 @@ except ImportError:
 import random
 from net.layer.rpn_nms import rpn_encode
 from torch.autograd import Variable
-
+import numpy as np
+import torch
 
 def make_one_rpn_target(cfg, mode, input, window, truth_box, truth_label):
     """
