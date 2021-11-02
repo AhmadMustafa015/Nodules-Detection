@@ -490,7 +490,7 @@ def generate_markers(image):
 
 
 def seperate_lungs(image):
-    # Creation of the markers as shown above:
+    # Creation of the markers:
     marker_internal, marker_external, marker_watershed = generate_markers(image)
 
     # Creation of the Sobel-Gradient

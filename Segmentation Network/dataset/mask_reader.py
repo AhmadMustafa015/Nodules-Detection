@@ -67,8 +67,8 @@ class MaskReader(Dataset):
                     for t in l:
                         self.bboxes.append([np.concatenate([[i],t])]) #Concatenate all the boxes coordinate with the number of the label
             self.bboxes = np.concatenate(self.bboxes,axis = 0).astype(np.float32) # concatenate based on the labels number
-        if mode != 'predict':
-            self.crop = Crop(cfg)
+
+        self.crop = Crop(cfg)
         self.split_combiner = split_combiner
 
     def __getitem__(self, idx):
