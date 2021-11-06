@@ -1,6 +1,11 @@
 import argparse
 import logging
+import math
+import ntpath
 import sys
+
+import cv2
+
 from config import config
 import torch
 import os
@@ -9,6 +14,10 @@ import numpy as np
 from dataset.mask_reader import MaskReader
 import scipy.ndimage as ndimage
 from skimage import measure, morphology, segmentation
+from torchsummary import summary, summary_string
+import torch.nn.functional as F
+from utils.util import average_precision, crop_boxes2mask_single
+
 
 this_module = sys.modules[__name__]
 logger = logging.getLogger("my logger")
@@ -28,7 +37,7 @@ def main():
     logFileDir = './predict.log'
     logging.basicConfig(filename=logFileDir, format='[%(levelname)s][%(asctime)s] %(message)s',
                         level=loggingLevel)
-    # Passing input argument
+    ################### PASSING INPUT ARGUMENT #######################
     args = parser.parse_args()
     inputImage = args.input
     logging.info('Input Image Directory: ', inputImage)
@@ -40,9 +49,11 @@ def main():
     logging.info('Network chosen: ', net)
     device = args.device
     logging.info("Device used: %s" % device)
-    # Get the neural network
+    ################### GET THE NEURAL NETWORK #######################
     net = getattr(this_module, net)
-    # Load the weights
+    if device == 'GPU':
+        net = net.cuda()
+    ################### LOAD NUERAL NETWORK WIEGHTS #######################
     if weightDir:
         logging.info('Loading model from: %s' % weightDir)
         checkpoint = torch.load(weightDir, map_location=torch.device(device))
@@ -54,6 +65,7 @@ def main():
         logging.error('No model weight file specified')
         return
     # Prepare the output directory
+    ################### PREPARE THE OUTPUT DIRECTORY #######################
     logging.info('Output directory: ', outputDir)
     print('Input Image directory: ', inputImage)
     print('Output directory: ', outputDir)
@@ -61,16 +73,78 @@ def main():
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     # Read the input data
-    predict(net, dataset, save_dir)
+    ################### PREPARE THE INPUT DATA #######################
+    logging.info("LOADING THE INPUT IMAGE ...")
+    imageNumpy, imageSpacing, patient_id = load_image(inputImage)
+    logging.info("START PREPROCESSING THE INPUTTED IMAGE ...")
+    preprocessedImage = preprocessing(imageNumpy, imageSpacing)
+    preprocessedImage = preprocessedImage[np.newaxis, ...]
+    preprocessedImage = np.expand_dims(preprocessedImage, 0)
+    logging.warning("Image shape must be a multiplier of 16")
+    logging.info("FINISH PREPROCESSING ...")
+    input = torch.from_numpy((preprocessedImage.astype(np.float32) - 128.) / 128.).float()
+    predict(net, input, save_dir, preprocessedImage, patient_id, device)
 
 
-def predict(net, dataset, save_dir):
+def predict(net, input, save_dir, image, patient_id, device='GPU'):
     net.set_model('eval')  # TODO: check net.set_model and added predict type
     net.use_mask = True
     net.use_rcnn = True
     aps = []
     dices = []
+    D, H, W = image.shape
+    result, params_info = summary_string(net, (D, H, W))
+    total_params, trainable_params = params_info
+    logging.info(result)
+    logging.info("Total number of parameter %s; "
+                 "Total number of trainable parameter " % total_params
+                 , trainable_params)
+    with torch.no_grad():
+        if device == 'GPU':
+            input = input.cuda().unsqueeze(0)
+        else:
+            input = input.unsqueeze(0)
+        net.forward(input)
+    rpns = net.rpn_proposals.cpu().numpy()
+    detections = net.detections.cpu().numpy()
+    ensembles = net.ensemble_proposals.cpu().numpy()
 
+    if len(detections) and net.use_mask:
+        crop_boxes = net.crop_boxes
+        segments = [F.sigmoid(m).cpu().numpy() > 0.5 for m in net.mask_probs]
+
+        pred_mask = crop_boxes2mask_single(crop_boxes[:, 1:], segments, input.shape[2:])
+        pred_mask = pred_mask.astype(np.uint8)
+    else:
+        pred_mask = np.zeros((input[0].shape))
+
+    np.save(os.path.join(save_dir, '%s.npy' % (patient_id)), pred_mask)
+    mask_png_dir = save_dir + 'mask_png/'
+    if not os.path.exists(mask_png_dir):
+        os.mkdir(mask_png_dir)
+    for i in range(pred_mask.shape[0]):
+        img_path = mask_png_dir + "img_" + str(i).rjust(4, '0') + "_m.png"
+        cv2.imwrite(img_path, pred_mask[i] * 255)
+
+    print('rpn', rpns.shape)
+    print('detection', detections.shape)
+    print('ensemble', ensembles.shape)
+
+    if len(rpns):
+        rpns = rpns[:, 1:]
+        np.save(os.path.join(save_dir, '%s_rpns.npy' % (patient_id)), rpns)
+
+    if len(detections):
+        detections = detections[:, 1:-1]
+        np.save(os.path.join(save_dir, '%s_rcnns.npy' % (patient_id)), detections)
+
+    if len(ensembles):
+        ensembles = ensembles[:, 1:]
+        np.save(os.path.join(save_dir, '%s_ensembles.npy' % (patient_id)), ensembles)
+
+    # Clear gpu memory
+    del input, image, pred_mask  # , gt_mask, gt_img, pred_img, full, score
+    torch.cuda.empty_cache()
 
 def load_image(path_to_img):
     """
@@ -109,13 +183,14 @@ def load_image(path_to_img):
         logging.debug('Loaded the dicom image')
     elif scan_extension == "mhd":
         itkimage = sitk.ReadImage(path_to_img)
+        patient_id = ntpath.basename(path_to_img).replace('.mhd','')
     numpyImage = sitk.GetArrayFromImage(itkimage)
     logging.debug('Convert the image to numpy array [z,y,x]')
     numpyOrigin = np.array(list(reversed(itkimage.GetOrigin())))
     logging.info('Dicom Image origin [z,y,x]:\t', numpyOrigin)
     numpySpacing = np.array(list(reversed(itkimage.GetSpacing())))
     logging.info('Dicom Image spacing [z,y,x]:\t', numpySpacing)
-    return numpyImage, numpySpacing  # return numpy image
+    return numpyImage, numpySpacing, patient_id  # return numpy image
 
 
 def HU2uint8(image, HU_min=-1200.0, HU_max=600.0, HU_nan=-2000.0):
@@ -368,6 +443,22 @@ def preprocessing(imagePixels, spacing):
     y_min, y_max = lung_box[1]
     x_min, x_max = lung_box[2]
     image_new = image_new[z_min:z_max, y_min:y_max, x_min:x_max]
+    # Image shape must be a multiplier of 16
+    factor, pad_value = 16, 0
+    logging.info("Output image shape ",image_new.shape)
+    depth, height, width = image_new.shape
+    d = int(math.ceil(depth / float(factor))) * factor
+    h = int(math.ceil(height / float(factor))) * factor
+    w = int(math.ceil(width / float(factor))) * factor
+
+    pad = []
+    pad.append([0, d - depth])
+    pad.append([0, h - height])
+    pad.append([0, w - width])
+
+    image_new = np.pad(image_new, pad, 'constant', constant_values=pad_value)
+    logging.info("Output image shape after padding by factor=%s " % factor,
+                 image_new.shape)
     return image_new
 
 if __name__ == '__main__':
