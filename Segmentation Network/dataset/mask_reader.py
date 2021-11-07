@@ -92,10 +92,12 @@ class MaskReader(Dataset):
                 #    print("ok")
                 do_sacle = self.augtype['scale'] and (self.mode=='train')
                 sample, target, masks = self.crop(imgs, bbox[1:], masks, do_sacle, is_random_crop)
+                a = masks.max()
                 if self.mode == 'train' and not is_random_crop:
                      sample, target, masks = augment(sample, target, masks, 
                                                              do_flip=self.augtype['flip'], do_rotate=self.augtype['rotate'],
                                                              do_swap=self.augtype['swap'])
+                b = masks.max()
             else:
                 randimid = np.random.randint(len(self.filenames))
                 filename = self.filenames[randimid]
