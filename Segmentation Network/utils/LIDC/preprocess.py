@@ -469,7 +469,7 @@ def convex_hull_dilate(binary_mask, dilate_factor=1.5, iterations=10):
 
 
 def apply_mask(image, binary_mask1, pad_value=170,
-               bone_thred=210, remove_bone=False):
+               bone_throd=210, remove_bone=False):
     """
     Apply the binary mask of each lung to the image. Regions out of interest
     are replaced with pad_value.
@@ -480,7 +480,7 @@ def apply_mask(image, binary_mask1, pad_value=170,
         that only the other side of lung is True.
     pad_value: int, uint8 value for padding image regions that is not
         interested.
-    bone_thred: int, uint8 threahold value for determine parts of image is
+    bone_throd: int, uint8 threshold value for determine parts of image is
         bone.
     return: D uint8 numpy array with the same shape of the image after
         applying the lung mask.
@@ -499,7 +499,7 @@ def apply_mask(image, binary_mask1, pad_value=170,
     # set bones in extra mask to 170 (ie convert HU > 482 to HU 0;
     # water).
     if remove_bone:
-        image_new[image_new * binary_mask_extra > bone_thred] = pad_value
+        image_new[image_new * binary_mask_extra > bone_throd] = pad_value
 
     return image_new
 
@@ -629,7 +629,10 @@ def preprocess(params):
         lung_mask, _ = nrrd.read(os.path.join(settings.LIDC_SEGMENTED_LUNG_DIR, '%s_mask.nrrd' % (pid)))
     else:
         lung_mask, _, _ = load_itk_image(os.path.join(lung_mask_dir, '%s.mhd' % (pid)))
-    lung_mask = np.flipud(lung_mask)
+    lung_mask = np.flipud(lung_mask) #TODO: check this function first z slice will be last?
+    #WARNING: Mask images has been loaded using pydicom library while the patient images loaded using
+    #SimpleITK. Because of that the mask array will be the oppesit of the patient image that's why we used
+    # np.flipud
     #TODO: Input images as dcm formate instead of mhd
     if scan_extension == "dcm":
         src_path = []

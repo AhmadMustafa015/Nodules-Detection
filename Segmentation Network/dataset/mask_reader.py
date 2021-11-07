@@ -25,10 +25,13 @@ class MaskReader(Dataset):
 
         labels = [] #contains all the labels loaded from "bboxes.npy"
         self.source = []
-        if set_name.endswith('.csv'):
-            self.filenames = np.genfromtxt(set_name, dtype=str)
-        elif set_name.endswith('.npy'):
-            self.filenames = np.load(set_name)
+        if mode != 'predict':
+            if set_name.endswith('.csv'):
+                self.filenames = np.genfromtxt(set_name, dtype=str)
+            elif set_name.endswith('.npy'):
+                self.filenames = np.load(set_name)
+        else:
+            self.filenames = data_dir.split("/")[-1] #TODO: Complete file name
 
         if mode != 'test':
             #self.filenames = [self.filenames]
@@ -38,24 +41,25 @@ class MaskReader(Dataset):
 
         for fn in self.filenames:
             # For nodules > 3mm
-            is_found = True
-            if os.path.isfile(os.path.join(data_dir, '%s_bboxes.npy' % fn)):
-                l = np.load(os.path.join(data_dir, '%s_bboxes.npy' % fn))
-            else:
-                is_found = False
-            if os.path.isfile(os.path.join(data_dir, 'small_%s_bboxes.npy' % fn)):
+            if mode != 'predict':
                 is_found = True
-                l_small = np.load(os.path.join(data_dir, 'small_%s_bboxes.npy' % fn))
-                if l_small != []:
-                    l = np.concatenate((l, l_small), axis=0)
-            if np.all(l==0):
-                l=np.array([])
-            labels.append(l)
-            if not is_found:
-                self.filenames.remove(fn)
+                if os.path.isfile(os.path.join(data_dir, '%s_bboxes.npy' % fn)):
+                    l = np.load(os.path.join(data_dir, '%s_bboxes.npy' % fn))
+                else:
+                    is_found = False
+                if os.path.isfile(os.path.join(data_dir, 'small_%s_bboxes.npy' % fn)):
+                    is_found = True
+                    l_small = np.load(os.path.join(data_dir, 'small_%s_bboxes.npy' % fn))
+                    if l_small != []:
+                        l = np.concatenate((l, l_small), axis=0)
+                if np.all(l==0):
+                    l=np.array([])
+                labels.append(l)
+                if not is_found:
+                    self.filenames.remove(fn)
         print("Total Training Data is: ", len(self.filenames))
-
-        self.sample_bboxes = labels
+        if mode != 'predict':
+            self.sample_bboxes = labels
         if self.mode in ['train', 'val', 'eval']:
             self.bboxes = []
             for i, l in enumerate(labels):
@@ -63,6 +67,7 @@ class MaskReader(Dataset):
                     for t in l:
                         self.bboxes.append([np.concatenate([[i],t])]) #Concatenate all the boxes coordinate with the number of the label
             self.bboxes = np.concatenate(self.bboxes,axis = 0).astype(np.float32) # concatenate based on the labels number
+
         self.crop = Crop(cfg)
         self.split_combiner = split_combiner
 
