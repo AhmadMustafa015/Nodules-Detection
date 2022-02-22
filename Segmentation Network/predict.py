@@ -5,7 +5,7 @@ import ntpath
 import sys
 
 import cv2
-
+from net.nodule_net import NoduleNet
 from config import config
 import torch
 import os
@@ -14,10 +14,10 @@ import numpy as np
 from dataset.mask_reader import MaskReader
 import scipy.ndimage as ndimage
 from skimage import measure, morphology, segmentation
-from torchsummary import summary_string
+from torchsummary import summary_string, summary
 import torch.nn.functional as F
 from utils.util import average_precision, crop_boxes2mask_single
-
+from config import train_config, data_config, net_config, config
 
 this_module = sys.modules[__name__]
 logger = logging.getLogger("my logger")
@@ -28,7 +28,7 @@ parser.add_argument('--out_dir', type=str, default=config['out_dir'],
                     help="path to save the results")
 parser.add_argument('--weight', type=str, default=config['initial_checkpoint'],
                     help="path to model weights to be used")
-parser.add_argument('--device', type=str, default='GPU',
+parser.add_argument('--device', type=str, default='gpu',
                     help="Run the model on CPU or GPU")
 
 
@@ -40,23 +40,23 @@ def main():
     ################### PASSING INPUT ARGUMENT #######################
     args = parser.parse_args()
     inputImage = args.input
-    logging.info('Input Image Directory: ', inputImage)
+    logging.info('Input Image Directory: %s' % inputImage)
     outputDir = args.out_dir
-    logging.info('Output Directory: ', outputDir)
+    logging.info('Output Directory: %s' % outputDir)
     weightDir = args.weight
-    logging.info('Weights Directory: ', weightDir)
+    logging.info('Weights Directory: %s' % weightDir)
     net = config['net']
-    logging.info('Network chosen: ', net)
+    logging.info('Network chosen: %s' % net)
     device = args.device
     logging.info("Device used: %s" % device)
     ################### GET THE NEURAL NETWORK #######################
-    net = getattr(this_module, net)
-    if device == 'GPU':
+    net = getattr(this_module, net)(net_config)
+    if device == 'gpu':
         net = net.cuda()
     ################### LOAD NUERAL NETWORK WIEGHTS #######################
     if weightDir:
         logging.info('Loading model from: %s' % weightDir)
-        checkpoint = torch.load(weightDir, map_location=torch.device(device))
+        checkpoint = torch.load(weightDir, map_location=torch.device('cuda'))
         epoch = checkpoint['epoch']
         logging.info('Loaded weights epoch number: %s' % epoch)
         net.load_state_dict(checkpoint['state_dict'])
@@ -66,9 +66,9 @@ def main():
         return
     # Prepare the output directory
     ################### PREPARE THE OUTPUT DIRECTORY #######################
-    logging.info('Output directory: ', outputDir)
-    print('Input Image directory: ', inputImage)
-    print('Output directory: ', outputDir)
+    logging.info('Output directory: %s' % outputDir)
+    print('Input Image directory: %s' % inputImage)
+    print('Output directory: %s' % outputDir)
     save_dir = os.path.join(outputDir, 'results')
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
@@ -86,21 +86,22 @@ def main():
     predict(net, input, save_dir, preprocessedImage, patient_id, device)
 
 
-def predict(net, input, save_dir, image, patient_id, device='GPU'):
-    net.set_model('eval')  # TODO: check net.set_model and added predict type
+def predict(net, input, save_dir, image, patient_id, device='gpu'):
+    net.set_mode('eval')  # TODO: check net.set_model and added predict type
     net.use_mask = True
     net.use_rcnn = True
     aps = []
     dices = []
-    D, H, W = image.shape
-    result, params_info = summary_string(net, (D, H, W))
-    total_params, trainable_params = params_info
-    logging.info(result)
-    logging.info("Total number of parameter %s; "
-                 "Total number of trainable parameter " % total_params
-                 , trainable_params)
+    _,_,D, H, W = image.shape
+    summary(net, (D, H, W))
+    #result, params_info = summary_string(net, (D, H, W))
+    #total_params, trainable_params = params_info
+    #logging.info(result)
+    #logging.info("Total number of parameter %s; "
+    #             "Total number of trainable parameter " % total_params
+    #             , trainable_params)
     with torch.no_grad():
-        if device == 'GPU':
+        if device == 'gpu':
             input = input.cuda().unsqueeze(0)
         else:
             input = input.unsqueeze(0)
@@ -163,21 +164,21 @@ def load_image(path_to_img):
             slices.append(os.path.join(path_to_img, filename))
             scan_extension = "dcm"
             totalNumSlices += 1
-            logging.info('Add the slice to be precessed in the directory:\t', os.path.join(path_to_img, filename))
+            logging.info('Add the slice to be precessed in the directory:\t %s' % os.path.join(path_to_img, filename))
         elif filename.endswith(".mhd"):
             logging.debug('Reading file in .mhd format')
             slices.append(os.path.join(path_to_img, filename))
             scan_extension = "mhd"
-            logging.info('Add the raw mhd image to be precessed in the directory:\t',
+            logging.info('Add the raw mhd image to be precessed in the directory:\t %s' %
                          os.path.join(path_to_img, filename))
         else:
-            logging.error('Unknown input file format; File:\t', os.path.join(path_to_img, filename))
+            logging.error('Unknown input file format; File:\t %s' % os.path.join(path_to_img, filename))
     if len(slices) < 1:
-        logging.error('No images found in the directory:\t', path_to_img)
+        logging.error('No images found in the directory:\t %s' % path_to_img)
 
     if scan_extension == "dcm":
-        patient_id = path_to_img.basename(path_to_img)
-        logging.info('Patient ID:\t', patient_id)
+        patient_id = path_to_img.split('/')[-1]
+        logging.info('Patient ID:\t %s' % patient_id)
         reader = sitk.ImageSeriesReader()
         itkimage = sitk.ReadImage(reader.GetGDCMSeriesFileNames(path_to_img, patient_id))
         logging.debug('Loaded the dicom image')
@@ -187,9 +188,9 @@ def load_image(path_to_img):
     numpyImage = sitk.GetArrayFromImage(itkimage)
     logging.debug('Convert the image to numpy array [z,y,x]')
     numpyOrigin = np.array(list(reversed(itkimage.GetOrigin())))
-    logging.info('Dicom Image origin [z,y,x]:\t', numpyOrigin)
+    logging.info('Dicom Image origin [z,y,x]:\t %s' % numpyOrigin)
     numpySpacing = np.array(list(reversed(itkimage.GetSpacing())))
-    logging.info('Dicom Image spacing [z,y,x]:\t', numpySpacing)
+    logging.info('Dicom Image spacing [z,y,x]:\t %s' % numpySpacing)
     return numpyImage, numpySpacing, patient_id  # return numpy image
 
 
@@ -202,9 +203,9 @@ def HU2uint8(image, HU_min=-1200.0, HU_max=600.0, HU_nan=-2000.0):
     HU_max: float, max HU value.
     HU_nan: float, value for nan in the raw CT image.
     """
-    logging.info("[HyperParameter] HU minimum limit is:\t", HU_min)
-    logging.info("[HyperParameter] HU maximum limit is:\t", HU_max)
-    logging.debug("HU NAN filling is:\t", HU_nan)
+    logging.info("[HyperParameter] HU minimum limit is:\t %f" % HU_min)
+    logging.info("[HyperParameter] HU maximum limit is:\t %f" % HU_max)
+    logging.debug("HU NAN filling is:\t %f" % HU_nan)
     image_new = np.array(image)
     image_new[np.isnan(image_new)] = HU_nan
 
@@ -254,7 +255,7 @@ def generate_markers(image):
     return marker_internal, marker_external, marker_watershed
 
 
-def watershed_segmentation(image,spacing):
+def watershed_segmentation(image):
     # Creation of the markers:
     logging.info("Generate internal and external marker for watershed algorithm")
     marker_internal, marker_external, marker_watershed = generate_markers(image)
@@ -325,7 +326,7 @@ def preprocessing(imagePixels, spacing):
     logging.info("PREPROCESSING: Creat a lung mask for the input dicom image")
     imagePixels[imagePixels == -2000] = 0
     for i in range(imagePixels.shape[0]):
-        logging.info("Apply watershed algorithm to slice number %s out of " % i, imagePixels.shape[0], " slices")
+        logging.info("Apply watershed algorithm to slice number %d out of %d slices" % (i, imagePixels.shape[0]))
         lung_segmented, lung_lungfilter, lung_outline, lung_watershed, lung_sobel_gradient, \
         lung_marker_internal, lung_marker_external, lung_marker_watershed = watershed_segmentation(imagePixels[i])
         masks.append(lung_lungfilter)
@@ -401,7 +402,7 @@ def preprocessing(imagePixels, spacing):
         logging.info("[HyperParameter] new_spacing %s mm" % new_spacing)
         logging.info("Resample the image from its original spacing to new spacing = ", new_spacing)
         # shape can only be int, so has to be rounded.
-        logging.info("Original image spacing is ", spacing)
+        logging.info("Original image spacing is %s" % spacing)
         new_shape = np.round(image_new.shape * spacing / new_spacing)
 
         # the actual spacing to resample.
@@ -457,8 +458,7 @@ def preprocessing(imagePixels, spacing):
     pad.append([0, w - width])
 
     image_new = np.pad(image_new, pad, 'constant', constant_values=pad_value)
-    logging.info("Output image shape after padding by factor=%s " % factor,
-                 image_new.shape)
+    logging.info("Output image shape after padding by factor=%s %s" % (factor, image_new.shape))
     return image_new
 
 if __name__ == '__main__':

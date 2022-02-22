@@ -12,7 +12,7 @@ torch.manual_seed(SEED)
 torch.cuda.manual_seed_all(SEED)
 
 # Preprocessing using preserved HU in dilated part of mask
-BASE = 'C:/Users/RadioscientificOne/PycharmProjects/NoduleDetect/Nodules-Detection/Segmentation Network/workspace/data/LIDC/' # make sure you have the ending '/'
+BASE = './workspace/data/LIDC/' # make sure you have the ending '/'
 data_config = {
     # put combined LUNA16 .mhd files into one folder
     'data_dir': 'D:/Datasets/manifest-1600709154662/LIDC-IDRI/',
@@ -113,7 +113,7 @@ def lr_shedule(epoch, init_lr=0.01, total=200):
 
 train_config = {
     'net': 'NoduleNet',
-    'batch_size': 16,
+    'batch_size': 64,
 
     'lr_schedule': lr_shedule,
     'optimizer': 'SGD',
