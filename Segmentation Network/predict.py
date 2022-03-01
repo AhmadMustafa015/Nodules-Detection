@@ -14,7 +14,7 @@ import numpy as np
 from dataset.mask_reader import MaskReader
 import scipy.ndimage as ndimage
 from skimage import measure, morphology, segmentation
-from torchsummary import summary
+from torchsummary import summary_string, summary
 import torch.nn.functional as F
 from utils.util import average_precision, crop_boxes2mask_single
 from config import train_config, data_config, net_config, config
