@@ -30,6 +30,7 @@ parser.add_argument('--weight', type=str, default=config['initial_checkpoint'],
                     help="path to model weights to be used")
 parser.add_argument('--device', type=str, default='gpu',
                     help="Run the model on CPU or GPU")
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"  #force using one GPU only
 
 
 def main():
@@ -79,7 +80,6 @@ def main():
     logging.info("START PREPROCESSING THE INPUTTED IMAGE ...")
     preprocessedImage = preprocessing(imageNumpy, imageSpacing)
     preprocessedImage = preprocessedImage[np.newaxis, ...]
-    preprocessedImage = np.expand_dims(preprocessedImage, 0)
     logging.warning("Image shape must be a multiplier of 16")
     logging.info("FINISH PREPROCESSING ...")
     input = torch.from_numpy((preprocessedImage.astype(np.float32) - 128.) / 128.).float()
@@ -92,8 +92,9 @@ def predict(net, input, save_dir, image, patient_id, device='gpu'):
     net.use_rcnn = True
     aps = []
     dices = []
-    _,_,D, H, W = image.shape
-    summary(net, (D, H, W))
+    image_ = image[0]
+    #_,_,D, H, W = image.shape
+    #summary(net, image.shape)
     #result, params_info = summary_string(net, (D, H, W))
     #total_params, trainable_params = params_info
     #logging.info(result)
@@ -105,6 +106,7 @@ def predict(net, input, save_dir, image, patient_id, device='gpu'):
             input = input.cuda().unsqueeze(0)
         else:
             input = input.unsqueeze(0)
+        print(net.cuda())
         net.forward(input)
     rpns = net.rpn_proposals.cpu().numpy()
     detections = net.detections.cpu().numpy()
@@ -120,12 +122,23 @@ def predict(net, input, save_dir, image, patient_id, device='gpu'):
         pred_mask = np.zeros((input[0].shape))
 
     np.save(os.path.join(save_dir, '%s.npy' % (patient_id)), pred_mask)
-    mask_png_dir = save_dir + 'mask_png/'
+    mask_png_dir = save_dir + '/mask_png/'
+    mask_png_dir_2 = save_dir + '/final_png/'
     if not os.path.exists(mask_png_dir):
         os.mkdir(mask_png_dir)
+    if not os.path.exists(mask_png_dir_2):
+        os.mkdir(mask_png_dir_2)
     for i in range(pred_mask.shape[0]):
         img_path = mask_png_dir + "img_" + str(i).rjust(4, '0') + "_m.png"
-        cv2.imwrite(img_path, pred_mask[i] * 255)
+        img_path_2 = mask_png_dir_2 + "img_" + str(i).rjust(4, '0') + "_m.png"
+        pred_mask[np.where(pred_mask > 1)] = 1
+        pred_mask[i] = pred_mask[i] * 255
+        background = cv2.cvtColor(image_[i], cv2.COLOR_GRAY2BGR)
+        image_save = cv2.cvtColor(pred_mask[i], cv2.COLOR_GRAY2BGR)
+        image_save[np.where((image_save == [255, 255, 255]).all(axis=2))] = [0, 0, 255]
+        added_image = cv2.addWeighted(background, 0.4, image_save, 0.1, 0)
+        cv2.imwrite(img_path, image_save)
+        cv2.imwrite(img_path_2, added_image)
 
     print('rpn', rpns.shape)
     print('detection', detections.shape)
@@ -400,7 +413,7 @@ def preprocessing(imagePixels, spacing):
         print('Resampling...')
         new_spacing = [1.0, 1.0, 1.0]
         logging.info("[HyperParameter] new_spacing %s mm" % new_spacing)
-        logging.info("Resample the image from its original spacing to new spacing = ", new_spacing)
+        logging.info("Resample the image from its original spacing to new spacing = %s" % new_spacing)
         # shape can only be int, so has to be rounded.
         logging.info("Original image spacing is %s" % spacing)
         new_shape = np.round(image_new.shape * spacing / new_spacing)
@@ -446,7 +459,7 @@ def preprocessing(imagePixels, spacing):
     image_new = image_new[z_min:z_max, y_min:y_max, x_min:x_max]
     # Image shape must be a multiplier of 16
     factor, pad_value = 16, 0
-    logging.info("Output image shape ",image_new.shape)
+    #logging.info("Output image shape %s" % image_new.shape)
     depth, height, width = image_new.shape
     d = int(math.ceil(depth / float(factor))) * factor
     h = int(math.ceil(height / float(factor))) * factor
