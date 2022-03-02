@@ -346,7 +346,7 @@ class NoduleNet(nn.Module):
         # self.rpn_loss = Loss(cfg['num_hard'])
 
     def forward(self, inputs, truth_boxes=None, truth_labels=None, truth_masks=None, masks=None, split_combiner=None, nzhw=None):
-        features, feat_4 = data_parallel(self.feature_net, (inputs))  # print('fs[-1] ', fs[-1].shape)
+        features, feat_4 = data_parallel(self.feature_net, (inputs)); # print('fs[-1] ', fs[-1].shape)
         fs = features[-1]
 
         self.rpn_logits_flat, self.rpn_deltas_flat = data_parallel(self.rpn, fs)
