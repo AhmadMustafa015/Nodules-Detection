@@ -144,8 +144,8 @@ elif train_config['optimizer'] == 'RMSprop':
 
 train_config['RESULTS_DIR'] = os.path.join(train_config['ROOT_DIR'], 'results')
 train_config['out_dir'] = os.path.join(train_config['RESULTS_DIR'], 'cross_val_test')
-#train_config['initial_checkpoint'] = "model/200.ckpt"
-train_config['initial_checkpoint'] = False
+train_config['initial_checkpoint'] = './model/200_nosmall_aglvl_3_luna.ckpt'
+#train_config['initial_checkpoint'] = False
 
 config = dict(data_config, **net_config)
 config = dict(config, **train_config)

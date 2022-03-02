@@ -28,14 +28,14 @@ parser.add_argument('--out_dir', type=str, default=config['out_dir'],
                     help="path to save the results")
 parser.add_argument('--weight', type=str, default=config['initial_checkpoint'],
                     help="path to model weights to be used")
-parser.add_argument('--device', type=str, default='gpu',
+parser.add_argument('--device', type=str, default='cpu',
                     help="Run the model on CPU or GPU")
 
 
 def main():
     loggingLevel = logging.DEBUG
     logFileDir = './predict.log'
-    logging.basicConfig(filename=logFileDir, format='[%(levelname)s][%(asctime)s] %(message)s',
+    logging.basicConfig(filename=logFileDir,filemode = 'w' ,format='[%(levelname)s][%(asctime)s] %(message)s',
                         level=loggingLevel)
     ################### PASSING INPUT ARGUMENT #######################
     args = parser.parse_args()
@@ -93,7 +93,7 @@ def predict(net, input, save_dir, image, patient_id, device='gpu'):
     aps = []
     dices = []
     _,_,D, H, W = image.shape
-    summary(net, (D, H, W))
+    #summary(net, (D, H, W))
     #result, params_info = summary_string(net, (D, H, W))
     #total_params, trainable_params = params_info
     #logging.info(result)
@@ -101,10 +101,10 @@ def predict(net, input, save_dir, image, patient_id, device='gpu'):
     #             "Total number of trainable parameter " % total_params
     #             , trainable_params)
     with torch.no_grad():
-        if device == 'gpu':
-            input = input.cuda().unsqueeze(0)
-        else:
-            input = input.unsqueeze(0)
+        #if device == 'gpu':
+        #    input = input.cuda().unsqueeze(0)
+        #else:
+        input = input.unsqueeze(0)
         net.forward(input)
     rpns = net.rpn_proposals.cpu().numpy()
     detections = net.detections.cpu().numpy()
