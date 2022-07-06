@@ -17,6 +17,14 @@ from skimage import measure, morphology, segmentation
 import torch.nn.functional as F
 from utils.util import average_precision, crop_boxes2mask_single
 from config import train_config, data_config, net_config, config
+from lungmask import mask
+import datetime
+from PIL import Image, ImageDraw
+from pydicom.encaps import encapsulate
+from pydicom.uid import generate_uid, JPEGExtended
+from pydicom._storage_sopclass_uids import SecondaryCaptureImageStorage
+import glob
+import pydicom as dicom
 
 this_module = sys.modules[__name__]
 logger = logging.getLogger("my logger")
@@ -75,17 +83,17 @@ def main():
     # Read the input data
     ################### PREPARE THE INPUT DATA #######################
     logging.info("LOADING THE INPUT IMAGE ...")
-    imageNumpy, imageSpacing, patient_id = load_image(inputImage)
+    imageNumpy, imageSpacing, patient_id, itkimage = load_image(inputImage)
     logging.info("START PREPROCESSING THE INPUTTED IMAGE ...")
-    preprocessedImage = preprocessing(imageNumpy, imageSpacing)
+    preprocessedImage,resize_factor = preprocessing(imageNumpy, imageSpacing, itkimage)
     preprocessedImage = preprocessedImage[np.newaxis, ...]
     logging.warning("Image shape must be a multiplier of 16")
     logging.info("FINISH PREPROCESSING ...")
     input = torch.from_numpy((preprocessedImage.astype(np.float32) - 128.) / 128.).float()
-    predict(net, input, save_dir, preprocessedImage, patient_id, device)
+    predict(net, input, save_dir, preprocessedImage, patient_id, inputImage, itkimage, resize_factor, imageSpacing, device)
 
 
-def predict(net, input, save_dir, image, patient_id, device='gpu'):
+def predict(net, input, save_dir, image, patient_id, predDir, itkImage, resize_factor, spacing, device='gpu'):
     net.set_mode('eval')  # TODO: check net.set_model and added predict type
     net.use_mask = True
     net.use_rcnn = True
@@ -127,6 +135,7 @@ def predict(net, input, save_dir, image, patient_id, device='gpu'):
         os.mkdir(mask_png_dir)
     if not os.path.exists(mask_png_dir_2):
         os.mkdir(mask_png_dir_2)
+    pred_image_masked=[]
     for i in range(pred_mask.shape[0]):
         img_path = mask_png_dir + "img_" + str(i).rjust(4, '0') + "_m.png"
         img_path_2 = mask_png_dir_2 + "img_" + str(i).rjust(4, '0') + "_m.png"
@@ -138,7 +147,27 @@ def predict(net, input, save_dir, image, patient_id, device='gpu'):
         added_image = cv2.addWeighted(background, 0.4, image_save, 0.1, 0)
         cv2.imwrite(img_path, image_save)
         cv2.imwrite(img_path_2, added_image)
+        pred_image_masked.append(background)
+    pred_mask=np.array(pred_mask) * 255
+    print(pred_mask.max())
+    new_spacing = spacing
 
+    new_shape = np.round(pred_mask.shape / new_spacing)
+
+    # the actual spacing to resample.
+    resample_spacing =  pred_mask.shape / new_shape
+    resize_factor = new_shape / pred_mask.shape
+    numpyImage = sitk.GetArrayFromImage(itkImage)
+    newShape = np.array(numpyImage.shape) / np.array(pred_mask.shape)
+    pred_mask = ndimage.interpolation.zoom(pred_mask, newShape,
+                                           mode='nearest', order=3)
+    print(pred_mask.max())
+    for i in range(pred_mask.shape[0]):
+        img_path = mask_png_dir + "msk_" + str(i).rjust(4, '0') + "_m.png"
+        image_save = cv2.cvtColor(pred_mask[i], cv2.COLOR_GRAY2BGR)
+        image_save[np.where((image_save == [255, 255, 255]).all(axis=2))] = [0, 0, 255]
+        cv2.imwrite(img_path, image_save)
+    save_as_dicom(pred_image_masked, predDir)
     print('rpn', rpns.shape)
     print('detection', detections.shape)
     print('ensemble', ensembles.shape)
@@ -203,7 +232,7 @@ def load_image(path_to_img):
     logging.info('Dicom Image origin [z,y,x]:\t %s' % numpyOrigin)
     numpySpacing = np.array(list(reversed(itkimage.GetSpacing())))
     logging.info('Dicom Image spacing [z,y,x]:\t %s' % numpySpacing)
-    return numpyImage, numpySpacing, patient_id  # return numpy image
+    return numpyImage, numpySpacing, patient_id, itkimage  # return numpy image
 
 
 def HU2uint8(image, HU_min=-1200.0, HU_max=600.0, HU_nan=-2000.0):
@@ -315,7 +344,7 @@ def watershed_segmentation(image):
     return segmented, lungfilter, outline, watershed, sobel_gradient, marker_internal, marker_external, marker_watershed
 
 
-def preprocessing(imagePixels, spacing):
+def preprocessing(imagePixels, spacing,itkimage):
     """
     The preprocessing code is divided into four main tasks
     First: Convert the numpy images from HU to 8 bit unsigned int uint8
@@ -337,6 +366,7 @@ def preprocessing(imagePixels, spacing):
     # The intercept is usually -1024, so air is approximately 0
     logging.info("PREPROCESSING: Creat a lung mask for the input dicom image")
     imagePixels[imagePixels == -2000] = 0
+    """
     for i in range(imagePixels.shape[0]):
         logging.info("Apply watershed algorithm to slice number %d out of %d slices" % (i, imagePixels.shape[0]))
         lung_segmented, lung_lungfilter, lung_outline, lung_watershed, lung_sobel_gradient, \
@@ -345,6 +375,51 @@ def preprocessing(imagePixels, spacing):
     segMask = np.array(masks, dtype=np.int16)
     logging.warning("Load the mask and the image using the same library because loading an image using "
                     "SimpleITK will be flipped in z axis comparing to image loaded using pydicom")
+    """
+    segmentation = mask.apply(itkimage)
+    segmentation[np.where(segmentation == 2)] = 1
+    masks = []
+    for i, segment in enumerate(segmentation):
+        # out_img = HU2uint8(segment)
+        segmented = np.where(segment == 1, imagePixels[i], -2000 * np.ones((512, 512)))
+        out_img = HU2uint8(segmented)
+        cv2.imwrite("./OUTPUT/deep/watershed_code_" + str(i).zfill(3) + "_.png", out_img)
+        masks.append(segment)
+
+    segMask = np.array(masks, dtype=np.int16)
+
+    binary_mask_dilated = np.array(segMask)
+    dilate_factor = 1.2
+    logging.info("[HyperParameter] Dilate factor = %s; factor of increased area after dilation" % dilate_factor)
+    for i in range(segMask.shape[0]):
+        slice_binary = segMask[i]
+
+        if np.sum(slice_binary) > 0:
+            logging.info("Apply convex hull to mask slice number %s" % i)
+            slice_convex = morphology.convex_hull_image(slice_binary)
+            # The convex hull is the set of pixels included in the
+            # smallest convex polygon that surround all white pixels in the input image.
+
+            if np.sum(slice_convex) <= dilate_factor * np.sum(slice_binary):
+                logging.info("Replace slice number %s of the mask with the convexed slice" % i)
+                binary_mask_dilated[i] = slice_convex
+            else:
+                logging.warning("convex slice is > dilate factor * summation of the original slice; keep the original "
+                                "mask slice")
+        else:
+            logging.info("Slice %s doesn't have any white pixels" % i)
+
+    struct = ndimage.morphology.generate_binary_structure(3, 1)
+    binary_mask_dilated = ndimage.morphology.binary_dilation(
+        binary_mask_dilated, structure=struct, iterations=10)
+    logging.debug("Apply binary dilation")
+    binary_mask_extra = binary_mask_dilated ^ segMask  # binary_mask_dilated XOR original mask
+    pad_value = 170
+    logging.info("[HyperParameter] pad_value = %s" % pad_value)
+    logging.info("replace image values outside binary_mask_dilated with pad value = %s" % pad_value)
+    image_new = imageNew * binary_mask_dilated + \
+                pad_value * (1 - binary_mask_dilated).astype('uint8')
+
     ################### APPLY MASK #######################
     """
     Apply the binary mask of each lung to the image. Regions out of interest
@@ -361,7 +436,7 @@ def preprocessing(imagePixels, spacing):
     return: D uint8 numpy array with the same shape of the image after
         applying the lung mask.
     """
-
+    """
     binary_mask_dilated = np.array(segMask)
     dilate_factor = 1.5
     logging.info("[HyperParameter] Dilate factor = %s; factor of increased area after dilation" % dilate_factor)
@@ -393,7 +468,7 @@ def preprocessing(imagePixels, spacing):
     logging.info("replace image values outside binary_mask_dilated with pad value = %s" % pad_value)
     image_new = imageNew * binary_mask_dilated + \
                 pad_value * (1 - binary_mask_dilated).astype('uint8')
-
+    """
     remove_bone = False
     bone_throd = 210
     logging.debug("bone_throd uint8 threshold value for determine which parts of image is bones")
@@ -471,7 +546,88 @@ def preprocessing(imagePixels, spacing):
 
     image_new = np.pad(image_new, pad, 'constant', constant_values=pad_value)
     logging.info("Output image shape after padding by factor=%s %s" % (factor, image_new.shape))
-    return image_new
+    return image_new, resize_factor
 
+def ensure_even(stream):
+    # Very important for some viewers
+    if len(stream) % 2:
+        return stream + b"\x00"
+    return stream
+
+
+def save_as_dicom(pred_masks, inputDir, invert_order=False):
+    for count in range(len(pred_masks)):
+        pred_mask = pred_masks[count]
+
+        # display_img = normalize(img)
+        # pixels = get_pixels_hu([slice_])
+        # image = patient_img[slice_]
+        # img = image[0]
+        # print(img.shape)
+        # ds = slices[count]
+        def load_patient(src_dir):
+            # slices = [dicom.read_file(src_dir + '/' + s) for s in os.listdir(src_dir)]
+            slices = []
+            # print(src_dir)
+            for files in glob.glob(src_dir + "/*.dcm"):
+                slices.append(dicom.read_file(files))
+            # print(len(slices))
+            slices.sort(key=lambda x: int(x.InstanceNumber))
+            try:
+                slice_thickness = np.abs(slices[0].ImagePositionPatient[2] - slices[1].ImagePositionPatient[2])
+            except:
+                # print(len(slices))
+                slice_thickness = np.abs(slices[5].SliceLocation - slices[6].SliceLocation)
+            if slice_thickness == 0:
+                slice_thickness = np.abs(slices[4].ImagePositionPatient[2] - slices[5].ImagePositionPatient[2])
+            for s in slices:
+                s.SliceThickness = slice_thickness
+            return slices
+
+        slices = load_patient(inputDir)
+        if not invert_order:
+            save_count = pred_mask.shape[0] - count
+        #ds = slices[save_count - 1]
+        ds = slices[0]
+        pred_mask = pred_mask.astype('uint8')
+        pred_mask = Image.fromarray(pred_mask)
+        pred_mask = pred_mask.convert('RGB')
+        pred_mask = np.asarray(pred_mask)
+        # modify DICOM tags
+
+        ds.PhotometricInterpretation = 'RGB'
+        ds.SamplesPerPixel = 3
+        ds.BitsAllocated = 8
+        ds.BitsStored = 8
+        ds.HighBit = 7
+        ds.SeriesNumber = 53
+        # ds.add_new(0x00280006, 'US', 0)
+        ds.is_little_endian = True
+        # ds.SliceLocation = str(save_count)
+        ds.InstanceNumber = str(save_count)
+        ds.is_implicit_VR = True
+        # ds.Modality = "OT"
+        ds.SOPInstanceUID = generate_uid()
+        HEIGHT = pred_mask.shape[0]
+        WIDTH = pred_mask.shape[1]
+        ds.Rows = HEIGHT
+        ds.Columns = WIDTH
+        ds.PixelRepresentation = 0
+        # ds.AcquisitionNumber = '9'
+        # ds.SeriesInstanceUID = '1.3.6.1.4.1.14519.5.2.1.6279.6001.1763629124204912627830645853331'
+        # ds.StudyInstanceUID = '1.3.6.1.4.1.14519.5.2.1.6279.6001.101493103577576219860121359500'
+
+        ds.SOPClassUID = SecondaryCaptureImageStorage
+
+        ds.fix_meta_info()
+        # ds.fix_meta_info()
+
+        # save pixel data and dicom file
+        ds.PixelData = encapsulate([ensure_even(pred_mask.tobytes())])
+        ds.save_as('dicom_nodules/' + str(save_count) + '.dcm')
+        # ds = dicom.read_file('dicom_nodules/'+str(save_count)+'.dcm',force=True)
+        # pixels = get_pixels_hu([ds])
+        # image = pixels
+        # img = image[0]
 if __name__ == '__main__':
     main()

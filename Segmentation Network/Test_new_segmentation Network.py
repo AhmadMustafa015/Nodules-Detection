@@ -318,6 +318,7 @@ def preprocessing(imagePixels, spacing,itkimage,inputDir):
     logging.info("replace image values outside binary_mask_dilated with pad value = %s" % pad_value)
     image_new = imageNew * binary_mask_dilated + \
                 pad_value * (1 - binary_mask_dilated).astype('uint8')
+
     for i in range(image_new.shape[0]):
         cv2.imwrite("./OUTPUT/deep_plus/dilation_DL" + str(i).zfill(3) + "_.png", image_new[i])
     save_dir = './dicom_nodules'
@@ -384,14 +385,18 @@ def preprocessing(imagePixels, spacing,itkimage,inputDir):
         cv2.imwrite("./OUTPUT/WS_plus/dilation_WS" + str(i).zfill(3) + "_.png", image_new[i])
         
     """
+
 def ensure_even(stream):
     # Very important for some viewers
     if len(stream) % 2:
         return stream + b"\x00"
     return stream
-def save_as_dicom(pred_masks,inputDir,invert_order=False):
+
+
+def save_as_dicom(pred_masks, inputDir, invert_order=False):
     for count in range(pred_masks.shape[0]):
-        pred_mask= pred_masks[count]
+        pred_mask = pred_masks[count]
+
         # display_img = normalize(img)
         # pixels = get_pixels_hu([slice_])
         # image = patient_img[slice_]
@@ -401,10 +406,10 @@ def save_as_dicom(pred_masks,inputDir,invert_order=False):
         def load_patient(src_dir):
             # slices = [dicom.read_file(src_dir + '/' + s) for s in os.listdir(src_dir)]
             slices = []
-            #print(src_dir)
+            # print(src_dir)
             for files in glob.glob(src_dir + "/*.dcm"):
                 slices.append(dicom.read_file(files))
-            #print(len(slices))
+            # print(len(slices))
             slices.sort(key=lambda x: int(x.InstanceNumber))
             try:
                 slice_thickness = np.abs(slices[0].ImagePositionPatient[2] - slices[1].ImagePositionPatient[2])
@@ -416,11 +421,16 @@ def save_as_dicom(pred_masks,inputDir,invert_order=False):
             for s in slices:
                 s.SliceThickness = slice_thickness
             return slices
-        slices=load_patient(inputDir)
+
+        slices = load_patient(inputDir)
         if not invert_order:
             save_count = pred_mask.shape[0] - count
-        ds = slices[save_count - 1]
+        #ds = slices[save_count - 1]
+        ds = slices[0]
         pred_mask = pred_mask.astype('uint8')
+        pred_mask = Image.fromarray(pred_mask)
+        pred_mask = pred_mask.convert('RGB')
+        pred_mask = np.asarray(pred_mask)
         # modify DICOM tags
 
         ds.PhotometricInterpretation = 'RGB'
@@ -436,8 +446,8 @@ def save_as_dicom(pred_masks,inputDir,invert_order=False):
         ds.is_implicit_VR = True
         # ds.Modality = "OT"
         ds.SOPInstanceUID = generate_uid()
-        HEIGHT = 512
-        WIDTH = 512
+        HEIGHT = pred_mask.shape[1]
+        WIDTH = pred_mask.shape[0]
         ds.Rows = HEIGHT
         ds.Columns = WIDTH
         ds.PixelRepresentation = 0
@@ -457,39 +467,6 @@ def save_as_dicom(pred_masks,inputDir,invert_order=False):
         # pixels = get_pixels_hu([ds])
         # image = pixels
         # img = image[0]
-        """
-        else:
-            img_bbox = Image.fromarray((normalized_image).astype('uint8'))
-            img_bbox = img_bbox.convert('RGB')
-            img_bbox = np.asarray(img_bbox)
 
-            # modify DICOM tags
-            ds.PhotometricInterpretation = 'RGB'
-            ds.SamplesPerPixel = 3
-            ds.BitsAllocated = 8
-            ds.BitsStored = 8
-            ds.HighBit = 7
-            ds.SeriesNumber = 53
-            ds.is_implicit_VR = True
-            # ds.add_new(0x00280006, 'US', 0)
-            ds.is_little_endian = True
-            ds.InstanceNumber = str(save_count)
-            ds.SOPInstanceUID = generate_uid()
-            ds.Rows = HEIGHT
-            ds.Columns = WIDTH
-            ds.PixelRepresentation = 0
-            # ds.AcquisitionNumber = '2'
-            # ds.SeriesInstanceUID = '5'
-            # ds.StudyInstanceUID = '1.3.6.1.4.1.14519.5.2.1.6279.6001.101493103577576219860121359500'
-            # ds.SeriesInstanceUID = '1.3.6.1.4.1.14519.5.2.1.6279.6001.1763629124204912627830645853331'
-
-            ds.SOPClassUID = SecondaryCaptureImageStorage
-            ds.fix_meta_info()
-            # ds.fix_meta_info()
-
-            # save pixel data and dicom file
-            ds.PixelData = encapsulate([ensure_even(img_bbox.tobytes())])
-            ds.save_as('dicom_nodules/' + str(save_count) + '.dcm')
-            """
 if __name__ == '__main__':
     main()
