@@ -556,6 +556,25 @@ def ensure_even(stream):
 
 
 def save_as_dicom(pred_masks, inputDir, invert_order=False):
+    seriInstance = '10001'
+    sopInstance = '20001'
+
+    def series_uid():
+        uid = '1.2.826.0.1.3680043.10.913' + '.' + '10001' + '.' + seriInstance  # str(np.floor(1+np.random.rand()*9))
+        uid = uid + '.' + '20220416' + '0334123'
+
+        # for index in range(10):
+        #    uid = uid + str(np.floor(np.random.rand() *10))
+        return uid
+
+    def sop_uid():
+        uid = '1.2.826.0.1.3680043.10.913' + '.' + '10001' + '.' + sopInstance  # str(np.floor(1+np.random.rand()*9))
+        uid = uid + '.' + '20220416' + '0334123'
+
+        # for index in range(10):
+        #    uid = uid + str(np.floor(np.random.rand() *10))
+        return uid
+    series_id = series_uid()
     for count in range(len(pred_masks)):
         pred_mask = pred_masks[count]
 
@@ -587,6 +606,8 @@ def save_as_dicom(pred_masks, inputDir, invert_order=False):
         slices = load_patient(inputDir)
         if not invert_order:
             save_count = pred_mask.shape[0] - count
+        else:
+            save_count = count
         #ds = slices[save_count - 1]
         ds = slices[0]
         pred_mask = pred_mask.astype('uint8')
@@ -594,6 +615,20 @@ def save_as_dicom(pred_masks, inputDir, invert_order=False):
         pred_mask = pred_mask.convert('RGB')
         pred_mask = np.asarray(pred_mask)
         # modify DICOM tags
+        # ds.add_new(0x00280006, 'US', 0)
+        # ds.SliceLocation = str(save_count)
+        # ds.Modality = "OT"
+        ds.SOPInstanceUID = generate_uid()
+        HEIGHT = pred_mask.shape[0]
+        WIDTH = pred_mask.shape[1]
+        # ds.fix_meta_info()
+
+        # save pixel data and dicom file
+
+        # ds = dicom.read_file('dicom_nodules/'+str(save_count)+'.dcm',force=True)
+        # pixels = get_pixels_hu([ds])
+        # image = pixels
+        # img = image[0]
 
         ds.PhotometricInterpretation = 'RGB'
         ds.SamplesPerPixel = 3
@@ -601,33 +636,30 @@ def save_as_dicom(pred_masks, inputDir, invert_order=False):
         ds.BitsStored = 8
         ds.HighBit = 7
         ds.SeriesNumber = 53
+        ds.is_implicit_VR = True
         # ds.add_new(0x00280006, 'US', 0)
         ds.is_little_endian = True
-        # ds.SliceLocation = str(save_count)
         ds.InstanceNumber = str(save_count)
-        ds.is_implicit_VR = True
-        # ds.Modality = "OT"
         ds.SOPInstanceUID = generate_uid()
-        HEIGHT = pred_mask.shape[0]
-        WIDTH = pred_mask.shape[1]
         ds.Rows = HEIGHT
         ds.Columns = WIDTH
         ds.PixelRepresentation = 0
-        # ds.AcquisitionNumber = '9'
-        # ds.SeriesInstanceUID = '1.3.6.1.4.1.14519.5.2.1.6279.6001.1763629124204912627830645853331'
+        ds.SeriesInstanceUID = series_id
+        ds.RescaleType = 'HU'
+        ds.ConversionType = 'DRW'
+        ds.PlanarConfiguration = 0
+        # ds.AcquisitionNumber = '2'
+        # ds.SeriesInstanceUID = '5'
         # ds.StudyInstanceUID = '1.3.6.1.4.1.14519.5.2.1.6279.6001.101493103577576219860121359500'
+        # ds.SeriesInstanceUID = '1.3.6.1.4.1.14519.5.2.1.6279.6001.1763629124204912627830645853331'
 
         ds.SOPClassUID = SecondaryCaptureImageStorage
-
         ds.fix_meta_info()
         # ds.fix_meta_info()
 
         # save pixel data and dicom file
         ds.PixelData = encapsulate([ensure_even(pred_mask.tobytes())])
         ds.save_as('dicom_nodules/' + str(save_count) + '.dcm')
-        # ds = dicom.read_file('dicom_nodules/'+str(save_count)+'.dcm',force=True)
-        # pixels = get_pixels_hu([ds])
-        # image = pixels
-        # img = image[0]
+
 if __name__ == '__main__':
     main()
