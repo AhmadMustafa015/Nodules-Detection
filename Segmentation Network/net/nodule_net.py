@@ -412,9 +412,13 @@ class NoduleNet(nn.Module):
                                                          truth_boxes, truth_labels, masks)
 
                 # Make sure to keep feature maps not splitted by data parallel
-                features = [t.unsqueeze(0).expand(torch.cuda.device_count(), -1, -1, -1, -1, -1) for t in features]
-                self.mask_probs = data_parallel(self.mask_head, (torch.from_numpy(self.crop_boxes).cuda(), features))
-
+                if device == 'gpu':
+                    features = [t.unsqueeze(0).expand(torch.cuda.device_count(), -1, -1, -1, -1, -1) for t in features]
+                    self.mask_probs = data_parallel(self.mask_head, (torch.from_numpy(self.crop_boxes).cuda(), features))
+                else:
+                    features = [t.unsqueeze(0) for t in features]
+                    self.mask_probs = data_parallel(self.mask_head,
+                                                    (torch.from_numpy(self.crop_boxes), features))
                 if self.mode in ['eval', 'test']:
                     mask_keep = mask_nms(self.cfg, self.mode, self.mask_probs, self.crop_boxes, inputs)
                     #    self.crop_boxes = torch.index_select(self.crop_boxes, 0, mask_keep)
@@ -472,9 +476,12 @@ class NoduleNet(nn.Module):
                                                  truth_boxes, truth_labels, masks)
 
         # Make sure to keep feature maps not splitted by data parallel
-        features = [t.unsqueeze(0).expand(torch.cuda.device_count(), -1, -1, -1, -1, -1) for t in features]
-        self.mask_probs = data_parallel(self.mask_head, (torch.from_numpy(self.crop_boxes).cuda(), features))
-
+        if device == 'gpu':
+            features = [t.unsqueeze(0).expand(torch.cuda.device_count(), -1, -1, -1, -1, -1) for t in features]
+            self.mask_probs = data_parallel(self.mask_head, (torch.from_numpy(self.crop_boxes).cuda(), features))
+        else:
+            features = [t.unsqueeze(0) for t in features]
+            self.mask_probs = data_parallel(self.mask_head, (torch.from_numpy(self.crop_boxes), features))
         # if self.mode in ['eval', 'test']:
         #     mask_keep = mask_nms(self.cfg, self.mode, self.mask_probs, self.crop_boxes, inputs)
         # #    self.crop_boxes = torch.index_select(self.crop_boxes, 0, mask_keep)
@@ -488,13 +495,16 @@ class NoduleNet(nn.Module):
 
     def loss(self, targets=None):
         cfg = self.cfg
-
-        self.rcnn_cls_loss, self.rcnn_reg_loss = torch.zeros(1).cuda(), torch.zeros(1).cuda()
+        if device == 'gpu':
+            self.rcnn_cls_loss, self.rcnn_reg_loss = torch.zeros(1).cuda(), torch.zeros(1).cuda()
+        else:
+            self.rcnn_cls_loss, self.rcnn_reg_loss = torch.zeros(1), torch.zeros(1)
         rcnn_stats = None
         mask_stats = None
-
-        self.mask_loss = torch.zeros(1).cuda()
-
+        if device == 'gpu':
+            self.mask_loss = torch.zeros(1).cuda()
+        else:
+            self.mask_loss = torch.zeros(1)
         self.rpn_cls_loss, self.rpn_reg_loss, rpn_stats = \
             rpn_loss(self.rpn_logits_flat, self.rpn_deltas_flat, self.rpn_labels,
                      self.rpn_label_weights, self.rpn_targets, self.rpn_target_weights, self.cfg, mode=self.mode)
